@@ -831,8 +831,8 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		}
 	}
 
-	// collapse start/end time exceptions
-	// note: assuming each activity is unique by (name, location, start) -- if this isn't true, we'll lose instances
+	// create recurrence groups for each activity/location/weekday by finding the time range for the base case
+	// note: assuming each activity is unique by (name, location, start) -- if this isn't true (e.g., an activity in a place at a time ends at two different times, or two activities have the same names/locations/times but different IDs), we'll lose instances
 	baseActivityTimeRange := make([]fusiongo.TimeRange, len(schedule.Activities))
 	{
 		type PartitionKey struct {
