@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,171 +31,193 @@ func TestMain(m *testing.M) {
 }
 
 func Test(t *testing.T) {
-	t.Run("20231015", func(t *testing.T) {
-		defer testdata.Use("20231015")()
+	testdata.Run(t, func(t *testing.T, d string) {
+		t.Run("PrepareAndRender", func(t *testing.T) {
+			var schedule *Schedule
+			for i := 0; i < 15; i++ {
+				s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(swim))
+				if err != nil {
+					t.Fatalf("prepare: %v", err)
+				}
+				if i == 0 {
+					schedule = s
+					continue
+				}
 
-		t.Run("Full", func(t *testing.T) {
-			s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(swim))
-			if err != nil {
-				t.Fatalf("prepare: %v", err)
+				s.Updated = schedule.Updated
+
+				exp, _ := json.Marshal(schedule)
+				act, _ := json.Marshal(s)
+				if !bytes.Equal(act, exp) {
+					t.Fatal("prepare: not deterministic (" + strconv.Itoa(i) + ")\n\ta:" + string(exp) + "\n\tb:" + string(act) + "\n")
+				}
 			}
-
-			x := Schedule{
-				Updated:  s.Updated,
-				Modified: time.Date(2023, 10, 15, 19, 51, 05, 0, time.UTC),
-				Start:    fgDate(2023, 10, 12),
-				End:      fgDate(2023, 11, 29),
-				Activities: []Activity{
-					{
-						Name: "Member Lane Swim",
-						Locations: []Location{
-							{
-								Name: "Full Pool",
-								Instances: []Instance{
-									{
-										Time: fgTimeRange(7, 30, 8, 45),
-										Days: [7]bool{
-											time.Monday:    true,
-											time.Tuesday:   true,
-											time.Wednesday: true,
-											time.Thursday:  true,
-											time.Friday:    true,
-										},
-									},
-									{
-										Time: fgTimeRange(11, 30, 13, 30),
-										Days: [7]bool{
-											time.Thursday: true,
-										},
-									},
-									{
-										Time: fgTimeRange(11, 30, 13, 45),
-										Days: [7]bool{
-											time.Monday:    true,
-											time.Tuesday:   true,
-											time.Wednesday: true,
-											time.Friday:    true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 11, 10), Time: fgTimeRange(11, 30, 13, 30)},
-											{Date: fgDate(2023, 11, 24), Time: fgTimeRange(11, 30, 13, 30)},
-										},
-									},
-								},
-							},
-							{
-								Name: "Shallow End",
-								Instances: []Instance{
-									{
-										Time: fgTimeRange(14, 30, 16, 00),
-										Days: [7]bool{
-											time.Monday: true,
-											time.Friday: true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 10, 20), Cancelled: true},
-											{Date: fgDate(2023, 10, 27), Excluded: true},
-											{Date: fgDate(2023, 11, 10), Excluded: true},
-										},
-									},
-									{
-										Time: fgTimeRange(14, 30, 17, 45),
-										Days: [7]bool{
-											time.Thursday: true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 10, 26), Time: fgTimeRange(16, 00, 17, 45)},
-										},
-									},
-									{
-										Time: fgTimeRange(14, 30, 18, 00),
-										Days: [7]bool{
-											time.Tuesday: true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 10, 24), Time: fgTimeRange(16, 00, 18, 00)},
-											{Date: fgDate(2023, 11, 28), Time: fgTimeRange(16, 00, 18, 00)},
-										},
-									},
-									{
-										Time: fgTimeRange(21, 00, 22, 30),
-										Days: [7]bool{
-											time.Wednesday: true,
-										},
-									},
-								},
-							},
-						},
-					},
-					{
-						Name: "Rec Swim",
-						Locations: []Location{
-							{
-								Name: "Full Pool",
-								Instances: []Instance{
-									{
-										Time: fgTimeRange(12, 00, 14, 00),
-										Days: [7]bool{
-											time.Sunday:   true,
-											time.Saturday: true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 11, 4), Excluded: true},
-											{Date: fgDate(2023, 11, 5), Excluded: true},
-										},
-									},
-									{
-										Time: fgTimeRange(18, 00, 19, 30),
-										Days: [7]bool{
-											time.Friday: true,
-										},
-										Exceptions: []Exception{
-											{Date: fgDate(2023, 10, 27), Excluded: true},
-											{Date: fgDate(2023, 11, 10), Excluded: true},
-										},
-									},
-								},
-							},
-						},
-					},
-					{
-						Name: "Women's Only Lane Swim",
-						Locations: []Location{
-							{
-								Name: "Full Pool",
-								Instances: []Instance{
-									{
-										Time: fgTimeRange(9, 00, 10, 00),
-										Days: [7]bool{
-											time.Monday:    true,
-											time.Wednesday: true,
-											time.Friday:    true,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				Notifications: []Notification{},
-			}
-
-			act, _ := json.Marshal(s)
-			exp, _ := json.Marshal(x)
-			if !bytes.Equal(act, exp) {
-				t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
-			}
-
-			if err := Render(io.Discard, &Options{}, s); err != nil {
+			if err := Render(io.Discard, &Options{}, schedule); err != nil {
 				t.Fatalf("render: %v", err)
 			}
 		})
-	})
-	t.Run("20231019", func(t *testing.T) {
-		defer testdata.Use("20231019")()
 
-		t.Run("MergeCandidateRanking", func(t *testing.T) {
-			for i := 0; i < 100; i++ {
+		if d == "20231015" {
+			t.Run("Check", func(t *testing.T) {
+				s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(swim))
+				if err != nil {
+					t.Fatalf("prepare: %v", err)
+				}
+
+				x := Schedule{
+					Updated:  s.Updated,
+					Modified: time.Date(2023, 10, 15, 19, 51, 05, 0, time.UTC),
+					Start:    fgDate(2023, 10, 12),
+					End:      fgDate(2023, 11, 29),
+					Activities: []Activity{
+						{
+							Name: "Member Lane Swim",
+							Locations: []Location{
+								{
+									Name: "Full Pool",
+									Instances: []Instance{
+										{
+											Time: fgTimeRange(7, 30, 8, 45),
+											Days: [7]bool{
+												time.Monday:    true,
+												time.Tuesday:   true,
+												time.Wednesday: true,
+												time.Thursday:  true,
+												time.Friday:    true,
+											},
+										},
+										{
+											Time: fgTimeRange(11, 30, 13, 30),
+											Days: [7]bool{
+												time.Thursday: true,
+											},
+										},
+										{
+											Time: fgTimeRange(11, 30, 13, 45),
+											Days: [7]bool{
+												time.Monday:    true,
+												time.Tuesday:   true,
+												time.Wednesday: true,
+												time.Friday:    true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 11, 10), Time: fgTimeRange(11, 30, 13, 30)},
+												{Date: fgDate(2023, 11, 24), Time: fgTimeRange(11, 30, 13, 30)},
+											},
+										},
+									},
+								},
+								{
+									Name: "Shallow End",
+									Instances: []Instance{
+										{
+											Time: fgTimeRange(14, 30, 16, 00),
+											Days: [7]bool{
+												time.Monday: true,
+												time.Friday: true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 20), Cancelled: true},
+												{Date: fgDate(2023, 10, 27), Excluded: true},
+												{Date: fgDate(2023, 11, 10), Excluded: true},
+											},
+										},
+										{
+											Time: fgTimeRange(14, 30, 17, 45),
+											Days: [7]bool{
+												time.Thursday: true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 26), Time: fgTimeRange(16, 00, 17, 45)},
+											},
+										},
+										{
+											Time: fgTimeRange(14, 30, 18, 00),
+											Days: [7]bool{
+												time.Tuesday: true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 24), Time: fgTimeRange(16, 00, 18, 00)},
+												{Date: fgDate(2023, 11, 28), Time: fgTimeRange(16, 00, 18, 00)},
+											},
+										},
+										{
+											Time: fgTimeRange(21, 00, 22, 30),
+											Days: [7]bool{
+												time.Wednesday: true,
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							Name: "Rec Swim",
+							Locations: []Location{
+								{
+									Name: "Full Pool",
+									Instances: []Instance{
+										{
+											Time: fgTimeRange(12, 00, 14, 00),
+											Days: [7]bool{
+												time.Sunday:   true,
+												time.Saturday: true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 11, 4), Excluded: true},
+												{Date: fgDate(2023, 11, 5), Excluded: true},
+											},
+										},
+										{
+											Time: fgTimeRange(18, 00, 19, 30),
+											Days: [7]bool{
+												time.Friday: true,
+											},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 27), Excluded: true},
+												{Date: fgDate(2023, 11, 10), Excluded: true},
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							Name: "Women's Only Lane Swim",
+							Locations: []Location{
+								{
+									Name: "Full Pool",
+									Instances: []Instance{
+										{
+											Time: fgTimeRange(9, 00, 10, 00),
+											Days: [7]bool{
+												time.Monday:    true,
+												time.Wednesday: true,
+												time.Friday:    true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Notifications: []Notification{},
+				}
+
+				act, _ := json.Marshal(s)
+				exp, _ := json.Marshal(x)
+				if !bytes.Equal(act, exp) {
+					t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
+				}
+
+				if err := Render(io.Discard, &Options{}, s); err != nil {
+					t.Fatalf("render: %v", err)
+				}
+			})
+		}
+
+		if d == "20231019" {
+			t.Run("MergeCandidateRanking", func(t *testing.T) {
 				s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(func(ai *fusiongo.ActivityInstance) bool {
 					// this one has many possibilities for merges, some of which are ambiguous, and some of which are suboptimal
 					return ai.Activity == "Open Rec Badminton" && ai.Location == "Gym 2B"
@@ -253,15 +276,10 @@ func Test(t *testing.T) {
 				act, _ := json.Marshal(a)
 				exp, _ := json.Marshal(x)
 				if !bytes.Equal(act, exp) {
-					if i == 0 {
-						t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
-					} else {
-						t.Fatal("NOT DETERMINISTIC!!!")
-					}
+					t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
 				}
-				t.Log()
-			}
-		})
+			})
+		}
 	})
 }
 
