@@ -46,6 +46,7 @@ var (
 	NoGzip      = flag.Bool("no-gzip", false, "Disable automatic gzip response compression")
 	NoCache     = flag.Bool("no-cache", false, "Disable cache headers for schedule")
 	NoHome      = flag.Bool("no-home", false, "Disable the schedule list")
+	NoUpcoming  = flag.Bool("no-upcoming", false, "Don't show upcoming events")
 )
 
 func flag_Level(name string, value slog.Level, usage string) *slog.Level {
@@ -141,6 +142,11 @@ func main() {
 		if len(cfg) == 0 {
 			slog.Error("no schedules defined in schedule config")
 			os.Exit(1)
+		}
+		if *NoUpcoming {
+			for x := range cfg {
+				cfg[x].Options.UpcomingDays = 0
+			}
 		}
 		scheduleHandlers = make(map[string]http.Handler, len(cfg))
 		for _, path := range cfg.Paths() {
@@ -316,6 +322,18 @@ func parseSchedules(r io.Reader) (schedules, error) {
 			cfg[cur].Options.Description = value
 		case "footer":
 			cfg[cur].Options.Footer = append(cfg[cur].Options.Footer, template.HTML(value))
+		case "upcoming":
+			if cfg[cur].Options.UpcomingDays != 0 {
+				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
+			}
+			n, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: invalid number %q: %w", line, value, err)
+			}
+			if n < 1 || n > 90 {
+				return nil, fmt.Errorf("line %d: upcoming days must be greater than zero if specified, and lower than 90, got %d", line, n)
+			}
+			cfg[cur].Options.UpcomingDays = int(n)
 		default:
 			key, ok := strings.CutPrefix(key, "filter.")
 			if !ok {
