@@ -889,9 +889,6 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 
 		// for each partition, merge start times where possible
 		for _, pk := range pks {
-			if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-				slog.Debug("merging", "partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday))
-			}
 
 			// for each group, keep merging the best option until we have none left to merge
 			for epoch := 0; ; epoch++ {
@@ -1012,6 +1009,9 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				}
 				if len(cs) == 0 {
 					break
+				}
+				if epoch == 0 {
+					slog.Debug("merging", "partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday))
 				}
 
 				// rank the candidates
