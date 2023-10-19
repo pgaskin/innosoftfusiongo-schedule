@@ -72,9 +72,13 @@ type Options struct {
 	UpcomingDays int
 }
 
-//go:generate go run ./asap.go
-//go:embed asap.woff2
-var asap []byte
+//go:generate go run ./fonts.go
+var (
+	//go:embed asap.woff2
+	asap []byte
+	//go:embed symbols.woff2
+	symbols []byte
+)
 
 var colorCSS sync.Map
 var tmpl = template.Must(template.New("").
@@ -145,6 +149,9 @@ var tmpl = template.Must(template.New("").
 		},
 		"AsapFontURL": func() template.CSS {
 			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(asap) + "') format('woff2-variations')")
+		},
+		"SymbolsFontURL": func() template.CSS {
+			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(symbols) + "') format('woff2')")
 		},
 		"DataURL": func(mimetype string, data []byte) template.URL {
 			return template.URL("data:" + mimetype + ";base64," + base64.StdEncoding.EncodeToString(data))
@@ -243,6 +250,12 @@ var tmpl = template.Must(template.New("").
 					font-stretch: 87.5%;
 					font-display: swap;
 					src: {{AsapFontURL}};
+				}
+				@font-face {
+					font-family: 'Material Symbols Subset';
+					font-style: normal;
+					font-weight: 300;
+					src: {{SymbolsFontURL}};
 				}
 				html {
 					background: var(--md-ref-palette-neutral99);
@@ -421,9 +434,22 @@ var tmpl = template.Must(template.New("").
 				section.upcoming > div.inner > section.day > div.events > div.event.cancelled > div.activity {
 					text-decoration: line-through;
 				}
-				section.upcoming > div.inner > section.day > div.events > div.event > div.icon {
-					position: relative;
-					padding-left: 1.2em;
+				section.upcoming > div.inner > section.day > div.events > div.event > div.location::before,
+				section.upcoming > div.inner > section.day > div.events > div.event > div.time::before {
+					font-family: 'Material Symbols Subset';
+					text-rendering: optimizeLegibility;
+					-webkit-font-smoothing: antialiased;
+					-moz-osx-font-smoothing: grayscale;
+					display: inline-block;
+					vertical-align: top;
+					margin-right: .25em;
+					line-height: 1;
+				}
+				section.upcoming > div.inner > section.day > div.events > div.event > div.location::before {
+					content: '\E55F';
+				}
+				section.upcoming > div.inner > section.day > div.events > div.event > div.time::before {
+					content: '\E192';
 				}
 				section.upcoming > div.inner > section.day > div.events > div.event > div.icon > svg {
 					display: block;
@@ -598,14 +624,8 @@ var tmpl = template.Must(template.New("").
 									{{- range .Events }}
 									<div class="event {{- if .Cancelled }} cancelled {{- end -}}" itemscope itemtype="https://schema.org/Event">
 										<div class="activity" itemprop="name">{{.Activity}}</div>
-										<div class="location icon">
-											<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M480.136-490.769q26.71 0 45.595-19.021 18.884-19.021 18.884-45.731t-19.02-45.594Q506.574-620 479.864-620t-45.595 19.021q-18.884 19.02-18.884 45.731 0 26.71 19.02 45.594 19.021 18.885 45.731 18.885ZM480-172.923q112.769-98.154 178.308-199.654 65.538-101.5 65.538-175.577 0-109.769-69.5-181.192T480-800.769q-104.846 0-174.346 71.423t-69.5 181.192q0 74.077 65.538 175.577Q367.231-271.077 480-172.923Zm0 53.692Q339-243.923 267.577-351.808q-71.423-107.884-71.423-196.346 0-126.923 82.654-209.385Q361.461-840 480-840t201.192 82.461q82.654 82.462 82.654 209.385 0 88.462-71.423 196.346Q621-243.923 480-119.231Zm0-436.154Z"/></svg>
-											<span itemprop="location">{{.Location}}</span>
-										</div>
-										<div class="time icon">
-											<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="m625.846-305.846 28.308-28.308L500-488.326V-680h-40v208.308l165.846 165.846ZM480.134-120q-74.673 0-140.41-28.339-65.737-28.34-114.365-76.922-48.627-48.582-76.993-114.257Q120-405.194 120-479.866q0-74.673 28.339-140.41 28.34-65.737 76.922-114.365 48.582-48.627 114.257-76.993Q405.194-840 479.866-840q74.673 0 140.41 28.339 65.737 28.34 114.365 76.922 48.627 48.582 76.993 114.257Q840-554.806 840-480.134q0 74.673-28.339 140.41-28.34 65.737-76.922 114.365-48.582 48.627-114.257 76.993Q554.806-120 480.134-120ZM480-480Zm0 320q133 0 226.5-93.5T800-480q0-133-93.5-226.5T480-800q-133 0-226.5 93.5T160-480q0 133 93.5 226.5T480-160Z"/></svg>
-											<span class="start"><time itemprop="startDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.Start}}">{{.Date.TimeRange.Start.StringCompact}}</time></span> - <span class="end"><time itemprop="endDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.End}}">{{.Date.TimeRange.End.StringCompact}}</time></span>
-										</div>
+										<div class="location" itemprop="location">{{.Location}}</div>
+										<div class="time"><time itemprop="startDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.Start}}">{{.Date.TimeRange.Start.StringCompact}}</time></span> - <span class="end"><time itemprop="endDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.End}}">{{.Date.TimeRange.End.StringCompact}}</time></div>
 										{{- if .Cancelled }}
 										<meta itemprop="eventStatus" content="https://schema.org/EventCancelled">
 										{{- end }}<!-- TODO: show recurrence exception icon? -->

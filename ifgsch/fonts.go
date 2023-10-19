@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	params := url.Values{
+	asap := url.Values{
 		"family": {"Asap:wdth,wght@87.5,100..900"},
 		"text":   {""},
 	}
@@ -27,10 +27,24 @@ func main() {
 		{'\u2026', '\u2026'},
 	} {
 		for c := r[0]; c <= r[1]; c++ {
-			params["text"][0] += string(c)
+			asap["text"][0] += string(c)
 		}
 	}
+	font("asap.woff2", asap)
 
+	symbols := url.Values{
+		"family": {"Material Symbols Outlined:opsz,wght,FILL,GRAD@20,300,0,0"},
+		"text": {string([]rune{
+			'\uE192', // schedule
+			'\uE55F', // location_on
+		})},
+	}
+	font("symbols.woff2", symbols)
+
+	// note: use https://wakamaifondue.com/ to see font details
+}
+
+func font(name string, params url.Values) {
 	css, err := css2(params)
 	if err != nil {
 		slog.Error("failed to fetch font css", "error", err)
@@ -56,14 +70,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := os.WriteFile("asap.woff2", buf, 0644); err != nil {
+	if err := os.WriteFile(name, buf, 0644); err != nil {
 		slog.Error("failed to write font file", "error", err)
 		os.Exit(1)
 	}
 
-	slog.Info("done", "size", len(buf))
-
-	// note: use https://wakamaifondue.com/ to see font details
+	slog.Info("done", "name", name, "size", len(buf))
 }
 
 func css2(p url.Values) (string, error) {
