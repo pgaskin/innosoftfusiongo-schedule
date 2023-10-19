@@ -1023,7 +1023,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						return cmp.Compare(c1.Penalty.Exception, c2.Penalty.Exception)
 					}
 					if c1.Penalty.Duration != c2.Penalty.Duration {
-						return cmp.Compare(c2.Penalty.Duration, c1.Penalty.Duration)
+						return cmp.Compare(c1.Penalty.Duration, c2.Penalty.Duration)
 					}
 					return c1.Into.Start.Compare(c2.Into.Start) // otherwise, prefer ones with an earlier start time
 				})
