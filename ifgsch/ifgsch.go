@@ -833,183 +833,214 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 
 	// collapse start/end time exceptions
 	// note: assuming each activity is unique by (name, location, start) -- if this isn't true, we'll lose instances
-	// note: very inefficient, but we don't have too many activities, and we care more about readability and correctness
 	baseActivityTimeRange := make([]fusiongo.TimeRange, len(schedule.Activities))
 	{
-		// group activities by start time for each weekday
-		type GroupKey struct {
+		type PartitionKey struct {
 			Activity string
 			Location string
 			Weekday  time.Weekday
-			Start    fusiongo.Time
 		}
-		groups := groupIndex(schedule.Activities, func(fai int, fa fusiongo.ActivityInstance) GroupKey {
-			return GroupKey{
+		type GroupKey struct {
+			Start fusiongo.Time
+		}
+
+		// group activities by start time for each weekday
+		pgs := map[PartitionKey]map[GroupKey][]int{}
+		for fai, fa := range schedule.Activities {
+			pk := PartitionKey{
 				Activity: fa.Activity,
 				Location: fa.Location,
 				Weekday:  fa.Time.Date.Weekday(),
-				Start:    fa.Time.TimeRange.Start,
 			}
+			gk := GroupKey{
+				Start: fa.Time.TimeRange.Start,
+			}
+			if pgs[pk] == nil {
+				pgs[pk] = map[GroupKey][]int{}
+			}
+			pgs[pk][gk] = append(pgs[pk][gk], fai)
+		}
+
+		// sort keys for determinism (it shouldn't affect the result, but it means logs will be consistently ordered)
+		var (
+			pks  = []PartitionKey{}
+			pgks = map[PartitionKey][]GroupKey{}
+		)
+		for pk, ps := range pgs {
+			pks = append(pks, pk)
+			for gk := range ps {
+				pgks[pk] = append(pgks[pk], gk)
+			}
+		}
+		for _, pk := range pks {
+			slices.SortStableFunc(pgks[pk], func(gk1, gk2 GroupKey) int {
+				return gk1.Start.Compare(gk2.Start)
+			})
+		}
+		slices.SortStableFunc(pks, func(pk1, pk2 PartitionKey) int {
+			if pk1.Activity != pk2.Activity {
+				return cmp.Compare(pk1.Activity, pk2.Activity)
+			}
+			if pk1.Location != pk2.Location {
+				return cmp.Compare(pk1.Location, pk2.Location)
+			}
+			return cmp.Compare(pk1.Weekday, pk2.Weekday)
 		})
 
-		// merge instances of activities with different start times into the
-		// original start time, if possible
-		for {
-			var gks []GroupKey
-			for gk := range groups {
-				gks = append(gks, gk)
+		// for each partition, merge start times where possible
+		for _, pk := range pks {
+			if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+				slog.Debug("merging", "partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday))
 			}
 
-			// make it deterministic
-			slices.SortFunc(gks, func(a, b GroupKey) int {
-				if a.Activity != b.Activity {
-					return cmp.Compare(a.Activity, b.Activity)
-				}
-				if a.Location != b.Location {
-					return cmp.Compare(a.Activity, b.Activity)
-				}
-				if a.Weekday != b.Weekday {
-					return cmp.Compare(a.Weekday, b.Weekday)
-				}
-				return a.Start.Compare(b.Start)
-			})
+			// for each group, keep merging the best option until we have none left to merge
+			for epoch := 0; ; epoch++ {
+				var (
+					gs  = pgs[pk]
+					gks = pgks[pk]
+				)
 
-			// find candidates from every possible pair
-			type candidate struct {
-				Into GroupKey
-				From GroupKey
-
-				ExceptionPenalty int
-				ExclusionPenalty int
-			}
-			var candidates []candidate
-			for i, gkInto := range gks {
-			g1:
-				for _, gkFrom := range gks[i+1:] {
-
-					// the only difference must be the start time
-					if gkInto.Activity != gkFrom.Activity {
-						continue g1
+				type Candidate struct {
+					Into    GroupKey
+					From    GroupKey
+					Penalty struct {
+						Exception int
+						Exclusion int
 					}
-					if gkInto.Location != gkFrom.Location {
-						continue g1
+					Result struct {
+						Activities []int
+						TimeRange  fusiongo.TimeRange
 					}
-					if gkInto.Weekday != gkFrom.Weekday {
-						continue g1
-					}
+				}
+				var cs []Candidate
 
-					// ensure dates don't intersect
-					for _, fai1 := range groups[gkFrom] {
-						for _, fai := range groups[gkInto] {
-							if schedule.Activities[fai].Time.Date == schedule.Activities[fai1].Time.Date {
-								continue g1
+				// sort the group keys for determinism
+				for i, gkInto := range gks {
+				candidate:
+					for _, gkFrom := range gks[i+1:] {
+
+						// ensure dates don't intersect
+						for _, faiFrom := range gs[gkFrom] {
+							for _, faiInto := range gs[gkInto] {
+								if schedule.Activities[faiInto].Time.Date == schedule.Activities[faiFrom].Time.Date {
+									continue candidate
+								}
 							}
 						}
-					}
 
-					// all time ranges from the group we're going to merge must overlap with a time from our group
-					// note: this is to prevent completely unrelated groups from being merged
-					for _, fai1 := range groups[gkFrom] {
-						var overlap bool
-						for _, fai := range groups[gkInto] {
-							if schedule.Activities[fai1].Time.TimeRange.TimeOverlaps(schedule.Activities[fai].Time.TimeRange) {
-								overlap = true
-								break
+						// all time ranges from the group we're going to merge must overlap with a time from our group
+						// note: this is to prevent completely unrelated groups from being merged
+						for _, faiFrom := range gs[gkFrom] {
+							var overlap bool
+							for _, faiInto := range gs[gkInto] {
+								if schedule.Activities[faiFrom].Time.TimeRange.TimeOverlaps(schedule.Activities[faiInto].Time.TimeRange) {
+									overlap = true
+									break
+								}
+							}
+							if !overlap {
+								continue candidate
 							}
 						}
-						if !overlap {
-							continue g1
+
+						// we have a candidate
+						c := Candidate{
+							Into: gkInto,
+							From: gkFrom,
 						}
-					}
 
-					// append the candidate
-					candidates = append(candidates, candidate{
-						Into: gkInto,
-						From: gkFrom,
-					})
-				}
-			}
-			if len(candidates) == 0 {
-				break
-			}
-
-			// rank the candidates
-			for i, c := range candidates {
-				ga := append(slices.Clone(groups[c.Into]), groups[c.From]...)
-
-				// time exceptions
-				{
-					gaT := fusiongo.TimeRange{
-						Start: mostCommonBy(ga, func(fai int) fusiongo.Time {
-							return schedule.Activities[fai].Time.TimeRange.Start
-						}),
-						End: mostCommonBy(ga, func(fai int) fusiongo.Time {
-							return schedule.Activities[fai].Time.TimeRange.End
-						}),
-					}
-					for _, x := range ga {
-						if schedule.Activities[x].Time.TimeRange.Start != gaT.Start {
-							candidates[i].ExceptionPenalty += 1
+						// simulate the merge
+						c.Result.Activities = make([]int, 0, len(gs[c.Into])+len(gs[c.From]))
+						c.Result.Activities = append(c.Result.Activities, gs[c.Into]...)
+						c.Result.Activities = append(c.Result.Activities, gs[c.From]...)
+						c.Result.TimeRange = fusiongo.TimeRange{
+							Start: mostCommonBy(c.Result.Activities, func(fai int) fusiongo.Time {
+								return schedule.Activities[fai].Time.TimeRange.Start
+							}),
+							End: mostCommonBy(c.Result.Activities, func(fai int) fusiongo.Time {
+								return schedule.Activities[fai].Time.TimeRange.End
+							}),
 						}
-						if schedule.Activities[x].Time.TimeRange.End != gaT.End {
-							candidates[i].ExceptionPenalty += 1
-						}
-					}
-				}
 
-				// change in number of total exclusions
-				{
-					var gaW [7]bool
-					for _, fai := range ga {
-						gaW[schedule.Activities[fai].Time.Weekday()] = true
-					}
-					for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
-						if gaW[d.Weekday()] {
-							if !slices.ContainsFunc(ga, func(fai int) bool {
-								return schedule.Activities[fai].Time.Date == d
-							}) {
-								candidates[i].ExclusionPenalty++
+						// compute penalty for ime exceptions
+						for _, x := range c.Result.Activities {
+							if schedule.Activities[x].Time.TimeRange.Start != c.Result.TimeRange.Start {
+								c.Penalty.Exception += 1
+							}
+							if schedule.Activities[x].Time.TimeRange.End != c.Result.TimeRange.End {
+								c.Penalty.Exception += 1
 							}
 						}
+
+						// compute penalty for change in number of total exclusions
+						for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
+							if d.Weekday() == pk.Weekday {
+								if !slices.ContainsFunc(c.Result.Activities, func(fai int) bool {
+									return schedule.Activities[fai].Time.Date == d
+								}) {
+									c.Penalty.Exclusion++
+								}
+							}
+						}
+
+						// append it
+						cs = append(cs, c)
 					}
 				}
-			}
-			slices.SortStableFunc(candidates, func(c1, c2 candidate) int {
-				if c1.ExclusionPenalty != c2.ExclusionPenalty {
-					return cmp.Compare(c1.ExclusionPenalty, c2.ExclusionPenalty)
+				if len(cs) == 0 {
+					break
 				}
-				if c1.ExceptionPenalty != c2.ExceptionPenalty {
-					return cmp.Compare(c1.ExceptionPenalty, c2.ExceptionPenalty)
+
+				// rank the candidates
+				slices.SortStableFunc(cs, func(c1, c2 Candidate) int {
+					if c1.Penalty.Exclusion != c2.Penalty.Exclusion {
+						return cmp.Compare(c1.Penalty.Exclusion, c2.Penalty.Exclusion)
+					}
+					if c1.Penalty.Exception != c2.Penalty.Exception {
+						return cmp.Compare(c1.Penalty.Exception, c2.Penalty.Exception)
+					}
+					return 0
+				})
+
+				// debug
+				if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+					for i, c := range cs {
+						slog.Debug("merge candidate",
+							"partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday),
+							"epoch", epoch,
+							"candidate", fmt.Sprintf("[%d %d] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Into.Start, c.From.Start),
+							"result", fmt.Sprintf("%s (%d += %d)", c.Result.TimeRange, len(gs[c.Into]), len(gs[c.From])),
+							"best", i == 0,
+						)
+					}
 				}
-				return 0
-			})
 
-			for _, c := range candidates {
-				fmt.Println(c)
+				// merge the best one
+				c := cs[0]
+				pgs[pk][c.Into] = c.Result.Activities
+				pgks[pk] = slices.DeleteFunc(pgks[pk], func(gk GroupKey) bool { return gk == c.From })
+				delete(pgs[pk], c.From)
 			}
-			fmt.Println()
-
-			// merge the best one
-			c := candidates[0]
-			groups[c.Into] = append(groups[c.Into], groups[c.From]...)
-			delete(groups, c.From)
 		}
 
 		// compute the base activity recurrence time ranges for all activity instances
-		for _, ga := range groups {
-			timeRange := fusiongo.TimeRange{
-				Start: mostCommonBy(ga, func(fai int) fusiongo.Time {
-					return schedule.Activities[fai].Time.TimeRange.Start
-				}),
-				End: mostCommonBy(ga, func(fai int) fusiongo.Time {
-					return schedule.Activities[fai].Time.TimeRange.End
-				}),
-			}
-			for _, fai := range ga {
-				if fa := schedule.Activities[fai]; fa.Time.TimeRange != timeRange {
-					slog.Debug("merge", "base", timeRange, slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
+		for _, pk := range pks {
+			for _, gk := range pgks[pk] {
+				ga := pgs[pk][gk]
+				timeRange := fusiongo.TimeRange{
+					Start: mostCommonBy(ga, func(fai int) fusiongo.Time {
+						return schedule.Activities[fai].Time.TimeRange.Start
+					}),
+					End: mostCommonBy(ga, func(fai int) fusiongo.Time {
+						return schedule.Activities[fai].Time.TimeRange.End
+					}),
 				}
-				baseActivityTimeRange[fai] = timeRange
+				for _, fai := range ga {
+					if fa := schedule.Activities[fai]; fa.Time.TimeRange != timeRange {
+						slog.Debug("merged", "into", timeRange, slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
+					}
+					baseActivityTimeRange[fai] = timeRange
+				}
 			}
 		}
 	}
@@ -1117,17 +1148,6 @@ func last[T any](xs []T) *T {
 		return &xs[n-1]
 	}
 	return nil
-}
-
-// groupIndex groups xs based on the key returned by fn, preserving the order
-// in each group.
-func groupIndex[T any, K comparable](xs []T, fn func(i int, x T) K) map[K][]int {
-	g := map[K][]int{}
-	for i, x := range xs {
-		k := fn(i, x)
-		g[k] = append(g[k], i)
-	}
-	return g
 }
 
 // mapFilterSortUniq maps a slice of T into a slice of unique and sorted U
