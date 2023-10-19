@@ -906,6 +906,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					Penalty struct {
 						Exception int
 						Exclusion int
+						Duration  time.Duration // prefer to merge shorter instances into longer ones
 					}
 					Result struct {
 						Activities []int
@@ -962,7 +963,29 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 							}),
 						}
 
-						// compute penalty for ime exceptions
+						// compute penalty for duration
+						fromTimeRange := fusiongo.TimeRange{
+							Start: mostCommonBy(gs[c.From], func(fai int) fusiongo.Time {
+								return schedule.Activities[fai].Time.TimeRange.Start
+							}),
+							End: mostCommonBy(gs[c.From], func(fai int) fusiongo.Time {
+								return schedule.Activities[fai].Time.TimeRange.End
+							}),
+						}
+						if fromTimeRange.End.Less(fromTimeRange.Start) {
+							a, b := fromTimeRange.End, fromTimeRange.Start
+							c.Penalty.Duration += time.Duration(b.Hour-a.Hour) * time.Hour
+							c.Penalty.Duration += time.Duration(b.Minute-a.Minute) * time.Minute
+							c.Penalty.Duration += time.Duration(b.Second-a.Second) * time.Second
+							c.Penalty.Duration = time.Hour*24 - c.Penalty.Duration
+						} else {
+							a, b := fromTimeRange.Start, fromTimeRange.End
+							c.Penalty.Duration += time.Duration(b.Hour-a.Hour) * time.Hour
+							c.Penalty.Duration += time.Duration(b.Minute-a.Minute) * time.Minute
+							c.Penalty.Duration += time.Duration(b.Second-a.Second) * time.Second
+						}
+
+						// compute penalty for time exceptions
 						for _, x := range c.Result.Activities {
 							if schedule.Activities[x].Time.TimeRange.Start != c.Result.TimeRange.Start {
 								c.Penalty.Exception += 1
@@ -999,7 +1022,10 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					if c1.Penalty.Exception != c2.Penalty.Exception {
 						return cmp.Compare(c1.Penalty.Exception, c2.Penalty.Exception)
 					}
-					return 0
+					if c1.Penalty.Duration != c2.Penalty.Duration {
+						return cmp.Compare(c2.Penalty.Duration, c1.Penalty.Duration)
+					}
+					return c1.Into.Start.Compare(c2.Into.Start) // otherwise, prefer ones with an earlier start time
 				})
 
 				// debug
@@ -1008,7 +1034,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						slog.Debug("merge candidate",
 							"partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday),
 							"epoch", epoch,
-							"candidate", fmt.Sprintf("[%d %d] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Into.Start, c.From.Start),
+							"candidate", fmt.Sprintf("[%d %d %s] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Penalty.Duration, c.Into.Start, c.From.Start),
 							"result", fmt.Sprintf("%s (%d += %d)", c.Result.TimeRange, len(gs[c.Into]), len(gs[c.From])),
 							"best", i == 0,
 						)
@@ -1037,9 +1063,49 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				}
 				for _, fai := range ga {
 					if fa := schedule.Activities[fai]; fa.Time.TimeRange != timeRange {
-						slog.Debug("merged", "into", timeRange, slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
+						slog.Debug("move into", "base", timeRange, slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
 					}
 					baseActivityTimeRange[fai] = timeRange
+				}
+			}
+		}
+
+		// split partitions which are all at different times without cancellations with more exclusions than instances to make the schedule easier to read
+		for _, pk := range pks {
+		gkNext:
+			for _, gk := range pgks[pk] {
+				gkTimes := map[fusiongo.TimeRange]int{}
+				for _, fai := range pgs[pk][gk] {
+					if schedule.Activities[fai].IsCancelled {
+						continue gkNext
+					}
+					if gkTimes[schedule.Activities[fai].Time.TimeRange] > 0 {
+						continue gkNext
+					}
+					gkTimes[schedule.Activities[fai].Time.TimeRange]++
+				}
+				if len(gkTimes) == 1 {
+					continue gkNext // nothing to do
+				}
+
+				var gkExclusions int
+				for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
+					if d.Weekday() == pk.Weekday {
+						if !slices.ContainsFunc(pgs[pk][gk], func(fai int) bool {
+							return schedule.Activities[fai].Time.Date == d
+						}) {
+							gkExclusions++
+						}
+					}
+				}
+
+				if gkExclusions < len(gkTimes) {
+					continue gkNext
+				}
+
+				slog.Debug("splitting", "partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday))
+				for _, fai := range pgs[pk][gk] {
+					baseActivityTimeRange[fai] = schedule.Activities[fai].Time.TimeRange
 				}
 			}
 		}

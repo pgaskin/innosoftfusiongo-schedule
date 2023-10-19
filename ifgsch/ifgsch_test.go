@@ -209,12 +209,7 @@ func Test(t *testing.T) {
 						Time: fgTimeRange(10, 30, 15, 0),
 						Days: [7]bool{true, false, false, false, false, false, false},
 						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 15), Time: fgTimeRange(14, 10, 19, 40)},
-							{Date: fgDate(2023, 10, 29), Excluded: true},
-							{Date: fgDate(2023, 11, 5), Excluded: true},
-							{Date: fgDate(2023, 11, 12), Excluded: true},
-							{Date: fgDate(2023, 11, 19), Excluded: true},
-							{Date: fgDate(2023, 11, 26), Excluded: true},
+							{Date: fgDate(2023, 10, 22), Only: true},
 						},
 					},
 					{
@@ -237,6 +232,13 @@ func Test(t *testing.T) {
 						Days: [7]bool{false, false, false, false, false, false, true},
 						Exceptions: []Exception{
 							{Date: fgDate(2023, 10, 21), Only: true},
+						},
+					},
+					{
+						Time: fgTimeRange(14, 10, 19, 40),
+						Days: [7]bool{true, false, false, false, false, false, false},
+						Exceptions: []Exception{
+							{Date: fgDate(2023, 10, 15), Only: true},
 						},
 					},
 					{
