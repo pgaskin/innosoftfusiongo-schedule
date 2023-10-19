@@ -916,9 +916,9 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				var cs []Candidate
 
 				// sort the group keys for determinism
-				for i, gkInto := range gks {
+				for _, gkInto := range gks {
 				candidate:
-					for _, gkFrom := range gks[i+1:] {
+					for _, gkFrom := range gks {
 
 						// ensure dates don't intersect
 						for _, faiFrom := range gs[gkFrom] {
