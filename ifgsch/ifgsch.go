@@ -1,7 +1,4 @@
-// Package ifgsch generates schedules from Innosoft Fusion Go data. It was
-// designed for the Queen's University ARC swim schedule, but the logic should
-// be usable for most activities as long as they are unique by [activity,
-// location, startTime, date].
+// Package ifgsch generates schedules from Innosoft Fusion Go data.
 package ifgsch
 
 import (
@@ -822,20 +819,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		schedule.Activities = schedule.Activities[:n]
 	}
 
-	// check our assumption
-	{
-		activitySeen := map[[4]string]int{}
-		for fai, fa := range schedule.Activities {
-			k := [4]string{fa.Activity, fa.Location, fa.Time.Date.String(), fa.Time.TimeRange.Start.String()}
-			if fai1, seen := activitySeen[k]; seen {
-				return nil, nil, fmt.Errorf("wtf: assumption failed: activities are not uniquely identifiable by (name, location, date, startTime): %q: [%d]=%v [%d]=%v", k, fai1, schedule.Activities[fai1], fai, fa)
-			}
-			activitySeen[k] = fai
-		}
-	}
-
 	// create recurrence groups for each activity/location/weekday by finding the time range for the base case
-	// note: assuming each activity is unique by (name, location, start) -- if this isn't true (e.g., an activity in a place at a time ends at two different times, or two activities have the same names/locations/times but different IDs), we'll lose instances
 	baseActivityTimeRange := make([]fusiongo.TimeRange, len(schedule.Activities))
 	{
 		type PartitionKey struct {
@@ -844,7 +828,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			Weekday  time.Weekday
 		}
 		type GroupKey struct {
-			Start fusiongo.Time
+			Time fusiongo.TimeRange
 		}
 
 		// group activities by start time for each weekday
@@ -856,7 +840,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				Weekday:  fa.Time.Date.Weekday(),
 			}
 			gk := GroupKey{
-				Start: fa.Time.TimeRange.Start,
+				Time: fa.Time.TimeRange,
 			}
 			if pgs[pk] == nil {
 				pgs[pk] = map[GroupKey][]int{}
@@ -877,7 +861,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		}
 		for _, pk := range pks {
 			slices.SortStableFunc(pgks[pk], func(gk1, gk2 GroupKey) int {
-				return gk1.Start.Compare(gk2.Start)
+				return gk1.Time.Compare(gk2.Time)
 			})
 		}
 		slices.SortStableFunc(pks, func(pk1, pk2 PartitionKey) int {
@@ -1028,7 +1012,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					if c1.Penalty.Duration != c2.Penalty.Duration {
 						return cmp.Compare(c1.Penalty.Duration, c2.Penalty.Duration)
 					}
-					return c1.Into.Start.Compare(c2.Into.Start) // otherwise, prefer ones with an earlier start time
+					return c1.Into.Time.Compare(c2.Into.Time) // otherwise, prefer ones with an earlier start time
 				})
 
 				// debug
@@ -1037,7 +1021,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						slog.Debug("merge candidate",
 							"partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday),
 							"epoch", epoch,
-							"candidate", fmt.Sprintf("[%d %d %s] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Penalty.Duration, c.Into.Start, c.From.Start),
+							"candidate", fmt.Sprintf("[%d %d %s] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Penalty.Duration, c.Into.Time, c.From.Time),
 							"result", fmt.Sprintf("%s (%d += %d)", c.Result.TimeRange, len(gs[c.Into]), len(gs[c.From])),
 							"best", i == 0,
 						)
