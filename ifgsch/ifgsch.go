@@ -707,6 +707,11 @@ func FetchAndPrepare(ctx context.Context, schoolID int, filter Filter) (*Schedul
 
 // Prepare computes schedule data from the provided Innosoft Fusion Go data.
 func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications, filter Filter) (*Schedule, error) {
+	s, _, err := prepare(schedule, notifications, filter)
+	return s, err
+}
+
+func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications, filter Filter) (*Schedule, *fusiongo.Schedule, error) {
 	var ss Schedule
 
 	// set the times
@@ -823,7 +828,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		for fai, fa := range schedule.Activities {
 			k := [4]string{fa.Activity, fa.Location, fa.Time.Date.String(), fa.Time.TimeRange.Start.String()}
 			if fai1, seen := activitySeen[k]; seen {
-				return nil, fmt.Errorf("wtf: assumption failed: activities are not uniquely identifiable by (name, location, date, startTime): %q: [%d]=%v [%d]=%v", k, fai1, schedule.Activities[fai1], fai, fa)
+				return nil, nil, fmt.Errorf("wtf: assumption failed: activities are not uniquely identifiable by (name, location, date, startTime): %q: [%d]=%v [%d]=%v", k, fai1, schedule.Activities[fai1], fai, fa)
 			}
 			activitySeen[k] = fai
 		}
@@ -1202,7 +1207,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 	}
 
 	// done
-	return &ss, nil
+	return &ss, schedule, nil
 }
 
 // last returns a pointer to the last element of xs. Note that the pointer may

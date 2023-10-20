@@ -1,8 +1,11 @@
 package ifgsch
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -48,6 +51,41 @@ func Test(t *testing.T) {
 			}
 			if err := Render(io.Discard, &Options{}, schedule); err != nil {
 				t.Fatalf("render: %v", err)
+			}
+		})
+
+		t.Run("MergeCorrectness", func(t *testing.T) {
+			fs, err := fusiongo.FetchSchedule(context.Background(), 110)
+			if err != nil {
+				panic(err)
+			}
+
+			fn, err := fusiongo.FetchNotifications(context.Background(), 110)
+			if err != nil {
+				panic(err)
+			}
+
+			ss, fs, err := prepare(fs, fn, nil)
+			if err != nil {
+				t.Fatalf("prepare: %v", err)
+			}
+
+			fl := dumpListFusion(fs)
+			sl := dumpListSchedule(ss)
+
+			if fl != sl {
+				d := difflib.UnifiedDiff{
+					A:        difflib.SplitLines(fl),
+					B:        difflib.SplitLines(sl),
+					FromFile: "fusion",
+					ToFile:   "ifgsch",
+					Context:  1,
+				}
+				x, err := difflib.GetUnifiedDiffString(d)
+				if err != nil {
+					panic(err)
+				}
+				t.Error("different events\n" + x)
 			}
 		})
 
@@ -334,4 +372,94 @@ func diff(an string, a *Schedule, bn string, b *Schedule) (string, bool) {
 		panic(err)
 	}
 	return t, true
+}
+
+type dumpListItem struct {
+	Time     fusiongo.DateTimeRange
+	Activity string
+	Location string
+
+	Cancelled bool
+}
+
+func dumpList(dl []dumpListItem) string {
+	slices.SortStableFunc(dl, func(a, b dumpListItem) int {
+		if a.Time != b.Time {
+			return a.Time.Compare(b.Time)
+		}
+		if a.Activity != b.Activity {
+			return cmp.Compare(a.Activity, b.Activity)
+		}
+		if a.Location != b.Location {
+			return cmp.Compare(a.Location, b.Location)
+		}
+		return 0
+	})
+	var b bytes.Buffer
+	for _, x := range dl {
+		if x.Time.Date == dl[0].Time.Date {
+			continue // skip the first one since ifgsch doesn't do exclusions for it
+		}
+		fmt.Fprintf(&b, "%s %s %q %q cancelled=%t\n", x.Time.Weekday().String()[:2], x.Time, x.Activity, x.Location, x.Cancelled)
+	}
+	return b.String()
+}
+
+func dumpListFusion(s *fusiongo.Schedule) string {
+	var d []dumpListItem
+	for _, a := range s.Activities {
+		d = append(d, dumpListItem{
+			Time:      a.Time,
+			Activity:  a.Activity,
+			Location:  a.Location,
+			Cancelled: a.IsCancelled,
+		})
+	}
+	return dumpList(d)
+}
+
+func dumpListSchedule(s *Schedule) string {
+	var dl []dumpListItem
+	for d := s.Start; !s.End.Less(d); d = d.AddDays(1) {
+		for _, a := range s.Activities {
+			for _, l := range a.Locations {
+			instances:
+				for _, i := range l.Instances {
+					if i.Days[d.Weekday()] {
+						dli := dumpListItem{
+							Time: fusiongo.DateTimeRange{
+								Date:      d,
+								TimeRange: i.Time,
+							},
+							Activity: a.Name,
+							Location: l.Name,
+						}
+						for _, x := range i.Exceptions {
+							if x.Date == d {
+								switch {
+								case x.Only:
+									// do nothing
+								case x.Excluded:
+									if x.Date == d {
+										continue instances
+									}
+								case x.Cancelled:
+									dli.Cancelled = true
+								case x.Time != (fusiongo.TimeRange{}):
+									dli.Time.TimeRange = x.Time
+								default:
+									panic("wtf")
+								}
+								break
+							} else if x.Only {
+								continue instances
+							}
+						}
+						dl = append(dl, dli)
+					}
+				}
+			}
+		}
+	}
+	return dumpList(dl)
 }
