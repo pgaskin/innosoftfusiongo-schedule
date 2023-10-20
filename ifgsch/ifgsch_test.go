@@ -1,9 +1,7 @@
 package ifgsch
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"io"
 	"log/slog"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/pgaskin/innosoftfusiongo-ical/fusiongo"
 	"github.com/pgaskin/innosoftfusiongo-ical/testdata"
+	"github.com/pmezard/go-difflib/difflib"
 )
 
 func TestMain(m *testing.M) {
@@ -43,13 +42,8 @@ func Test(t *testing.T) {
 					schedule = s
 					continue
 				}
-
-				s.Updated = schedule.Updated
-
-				exp, _ := json.Marshal(schedule)
-				act, _ := json.Marshal(s)
-				if !bytes.Equal(act, exp) {
-					t.Fatal("prepare: not deterministic (" + strconv.Itoa(i) + ")\n\ta:" + string(exp) + "\n\tb:" + string(act) + "\n")
+				if d, ok := diff("a", schedule, "b", s); ok {
+					t.Fatal("prepare: not deterministic (" + strconv.Itoa(i) + ")\n" + d)
 				}
 			}
 			if err := Render(io.Discard, &Options{}, schedule); err != nil {
@@ -64,7 +58,7 @@ func Test(t *testing.T) {
 					t.Fatalf("prepare: %v", err)
 				}
 
-				x := Schedule{
+				x := &Schedule{
 					Updated:  s.Updated,
 					Modified: time.Date(2023, 10, 15, 19, 51, 05, 0, time.UTC),
 					Start:    fgDate(2023, 10, 12),
@@ -203,11 +197,8 @@ func Test(t *testing.T) {
 					},
 					Notifications: []Notification{},
 				}
-
-				act, _ := json.Marshal(s)
-				exp, _ := json.Marshal(x)
-				if !bytes.Equal(act, exp) {
-					t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
+				if d, ok := diff("exp", x, "act", s); ok {
+					t.Fatal("prepare: incorrect output\n" + d)
 				}
 
 				if err := Render(io.Discard, &Options{}, s); err != nil {
@@ -218,7 +209,7 @@ func Test(t *testing.T) {
 
 		if d == "20231019" {
 			t.Run("MergeCandidateRanking", func(t *testing.T) {
-				s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(func(ai *fusiongo.ActivityInstance) bool {
+				a, err := FetchAndPrepare(context.Background(), 110, FilterFunc(func(ai *fusiongo.ActivityInstance) bool {
 					// this one has many possibilities for merges, some of which are ambiguous, and some of which are suboptimal
 					return ai.Activity == "Open Rec Badminton" && ai.Location == "Gym 2B"
 				}))
@@ -226,57 +217,68 @@ func Test(t *testing.T) {
 					t.Fatalf("prepare: %v", err)
 				}
 
-				a := s.Activities[0].Locations[0].Instances
-				x := []Instance{
-					{
-						Time: fgTimeRange(10, 30, 15, 0),
-						Days: [7]bool{true, false, false, false, false, false, false},
-						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 22), Only: true},
-						},
-					},
-					{
-						Time: fgTimeRange(11, 40, 13, 20),
-						Days: [7]bool{false, true, true, true, true, true, false},
-						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 16), Time: fgTimeRange(6, 30, 16, 50)},
-							{Date: fgDate(2023, 10, 17), Time: fgTimeRange(6, 30, 17, 20)},
-							{Date: fgDate(2023, 10, 18), Time: fgTimeRange(11, 10, 14, 50)},
-							{Date: fgDate(2023, 10, 19), Time: fgTimeRange(11, 10, 13, 50)},
-							{Date: fgDate(2023, 10, 23), Time: fgTimeRange(6, 30, 17, 30)},
-							{Date: fgDate(2023, 10, 25), Time: fgTimeRange(6, 30, 17, 20)},
-							{Date: fgDate(2023, 10, 26), Time: fgTimeRange(6, 30, 17, 20)},
-							{Date: fgDate(2023, 10, 27), Time: fgTimeRange(11, 30, 18, 30)},
-							{Date: fgDate(2023, 11, 3), Excluded: true},
-						},
-					},
-					{
-						Time: fgTimeRange(12, 30, 22, 0),
-						Days: [7]bool{false, false, false, false, false, false, true},
-						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 21), Only: true},
-						},
-					},
-					{
-						Time: fgTimeRange(14, 10, 19, 40),
-						Days: [7]bool{true, false, false, false, false, false, false},
-						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 15), Only: true},
-						},
-					},
-					{
-						Time: fgTimeRange(16, 0, 22, 0),
-						Days: [7]bool{false, false, false, false, false, true, false},
-						Exceptions: []Exception{
-							{Date: fgDate(2023, 10, 20), Only: true},
+				x := &Schedule{
+					Modified: time.Date(2023, 10, 18, 23, 51, 17, 0, time.UTC),
+					Start:    fgDate(2023, 10, 15),
+					End:      fgDate(2023, 12, 02),
+					Activities: []Activity{
+						{
+							Name: "Open Rec Badminton",
+							Locations: []Location{
+								{
+									Name: "Gym 2B",
+									Instances: []Instance{
+										{
+											Time: fgTimeRange(10, 30, 15, 0),
+											Days: [7]bool{true, false, false, false, false, false, false},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 22), Only: true},
+											},
+										},
+										{
+											Time: fgTimeRange(11, 40, 13, 20),
+											Days: [7]bool{false, true, true, true, true, true, false},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 16), Time: fgTimeRange(6, 30, 16, 50)},
+												{Date: fgDate(2023, 10, 17), Time: fgTimeRange(6, 30, 17, 20)},
+												{Date: fgDate(2023, 10, 18), Time: fgTimeRange(11, 10, 14, 50)},
+												{Date: fgDate(2023, 10, 19), Time: fgTimeRange(11, 10, 13, 50)},
+												{Date: fgDate(2023, 10, 23), Time: fgTimeRange(6, 30, 17, 30)},
+												{Date: fgDate(2023, 10, 25), Time: fgTimeRange(6, 30, 17, 20)},
+												{Date: fgDate(2023, 10, 26), Time: fgTimeRange(6, 30, 17, 20)},
+												{Date: fgDate(2023, 10, 27), Time: fgTimeRange(11, 30, 18, 30)},
+												{Date: fgDate(2023, 11, 3), Excluded: true},
+											},
+										},
+										{
+											Time: fgTimeRange(12, 30, 22, 0),
+											Days: [7]bool{false, false, false, false, false, false, true},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 21), Only: true},
+											},
+										},
+										{
+											Time: fgTimeRange(14, 10, 19, 40),
+											Days: [7]bool{true, false, false, false, false, false, false},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 15), Only: true},
+											},
+										},
+										{
+											Time: fgTimeRange(16, 0, 22, 0),
+											Days: [7]bool{false, false, false, false, false, true, false},
+											Exceptions: []Exception{
+												{Date: fgDate(2023, 10, 20), Only: true},
+											},
+										},
+									},
+								},
+							},
 						},
 					},
 				}
-
-				act, _ := json.Marshal(a)
-				exp, _ := json.Marshal(x)
-				if !bytes.Equal(act, exp) {
-					t.Fatal("prepare: incorrect output\n\tact:" + string(act) + "\n\texp:" + string(exp) + "\n")
+				if d, ok := diff("exp", x, "act", a); ok {
+					t.Fatal("prepare: incorrect output\n" + d)
 				}
 			})
 		}
@@ -312,4 +314,24 @@ func swim(fa *fusiongo.ActivityInstance) bool {
 	return slices.ContainsFunc(fa.Category, func(c fusiongo.ActivityCategory) bool {
 		return c.ID == "721"
 	})
+}
+
+func diff(an string, a *Schedule, bn string, b *Schedule) (string, bool) {
+	ad := string(Dump(a))
+	bd := string(Dump(b))
+	if ad == bd {
+		return "", false
+	}
+	d := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(ad),
+		B:        difflib.SplitLines(bd),
+		FromFile: an,
+		ToFile:   bn,
+		Context:  8,
+	}
+	t, err := difflib.GetUnifiedDiffString(d)
+	if err != nil {
+		panic(err)
+	}
+	return t, true
 }
