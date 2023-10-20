@@ -52,10 +52,10 @@ type Exception struct {
 	Date fusiongo.Date // will be on a weekday set to true in the Instance
 
 	// exactly one of the following fields should be set
-	Only      bool
-	Cancelled bool
-	Excluded  bool
-	Time      fusiongo.TimeRange
+	OnlyOnWeekday bool
+	Cancelled     bool
+	Excluded      bool
+	Time          fusiongo.TimeRange
 }
 
 type Notification struct {
@@ -192,7 +192,7 @@ var tmpl = template.Must(template.New("").
 								for _, exception := range instance.Exceptions {
 									if exception.Date == day.Date {
 										switch {
-										case exception.Only:
+										case exception.OnlyOnWeekday:
 											// do nothing
 										case exception.Excluded:
 											if exception.Date == day.Date {
@@ -207,7 +207,7 @@ var tmpl = template.Must(template.New("").
 										}
 										event.Exception = true
 										break
-									} else if exception.Only {
+									} else if exception.OnlyOnWeekday && day.Date.Weekday() == exception.Date.Weekday() {
 										continue instances
 									}
 								}
@@ -577,7 +577,7 @@ var tmpl = template.Must(template.New("").
 										{{- if eq $e.Date.Weekday (Weekday $w) }}
 										<div class="exception">
 											<time datetime="{{$e.Date}}">{{FormatShortDate $e.Date}}</time>
-											{{- if $e.Only -}}
+											{{- if $e.OnlyOnWeekday -}}
 											{{- " only" -}}
 											{{- else if $e.Cancelled -}}
 											{{- " cancelled" -}}
@@ -1168,8 +1168,8 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						if instanceCount[d.Weekday()] == 1 {
 							if exists {
 								ssInstance.Exceptions = append(ssInstance.Exceptions, Exception{
-									Date: d,
-									Only: true,
+									Date:          d,
+									OnlyOnWeekday: true,
 								})
 							}
 						} else {

@@ -270,7 +270,7 @@ func Test(t *testing.T) {
 											Time: fgTimeRange(10, 30, 15, 0),
 											Days: [7]bool{true, false, false, false, false, false, false},
 											Exceptions: []Exception{
-												{Date: fgDate(2023, 10, 22), Only: true},
+												{Date: fgDate(2023, 10, 22), OnlyOnWeekday: true},
 											},
 										},
 										{
@@ -292,21 +292,21 @@ func Test(t *testing.T) {
 											Time: fgTimeRange(12, 30, 22, 0),
 											Days: [7]bool{false, false, false, false, false, false, true},
 											Exceptions: []Exception{
-												{Date: fgDate(2023, 10, 21), Only: true},
+												{Date: fgDate(2023, 10, 21), OnlyOnWeekday: true},
 											},
 										},
 										{
 											Time: fgTimeRange(14, 10, 19, 40),
 											Days: [7]bool{true, false, false, false, false, false, false},
 											Exceptions: []Exception{
-												{Date: fgDate(2023, 10, 15), Only: true},
+												{Date: fgDate(2023, 10, 15), OnlyOnWeekday: true},
 											},
 										},
 										{
 											Time: fgTimeRange(16, 0, 22, 0),
 											Days: [7]bool{false, false, false, false, false, true, false},
 											Exceptions: []Exception{
-												{Date: fgDate(2023, 10, 20), Only: true},
+												{Date: fgDate(2023, 10, 20), OnlyOnWeekday: true},
 											},
 										},
 									},
@@ -437,7 +437,7 @@ func dumpListSchedule(s *Schedule) string {
 						for _, x := range i.Exceptions {
 							if x.Date == d {
 								switch {
-								case x.Only:
+								case x.OnlyOnWeekday:
 									// do nothing
 								case x.Excluded:
 									if x.Date == d {
@@ -451,7 +451,7 @@ func dumpListSchedule(s *Schedule) string {
 									panic("wtf")
 								}
 								break
-							} else if x.Only {
+							} else if x.OnlyOnWeekday && d.Weekday() == x.Date.Weekday() {
 								continue instances
 							}
 						}
