@@ -178,6 +178,7 @@ var tmpl = template.Must(template.New("").
 				}
 				for _, activity := range a.Activities {
 					for _, location := range activity.Locations {
+					instances:
 						for _, instance := range location.Instances {
 							if instance.Days[day.Date.Weekday()] {
 								event := DayEvent{
@@ -188,17 +189,14 @@ var tmpl = template.Must(template.New("").
 										TimeRange: instance.Time,
 									},
 								}
-								var skip bool
 								for _, exception := range instance.Exceptions {
 									if exception.Date == day.Date {
 										switch {
 										case exception.Only:
-											if exception.Date != day.Date {
-												skip = true
-											}
+											// do nothing
 										case exception.Excluded:
 											if exception.Date == day.Date {
-												skip = true
+												continue instances
 											}
 										case exception.Cancelled:
 											event.Cancelled = true
@@ -209,11 +207,11 @@ var tmpl = template.Must(template.New("").
 										}
 										event.Exception = true
 										break
+									} else if exception.Only {
+										continue instances
 									}
 								}
-								if !skip {
-									day.Events = append(day.Events, event)
-								}
+								day.Events = append(day.Events, event)
 							}
 						}
 					}
