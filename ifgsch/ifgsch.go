@@ -157,7 +157,7 @@ var tmpl = template.Must(template.New("").
 		"Upcoming": func(a Schedule, n int) any {
 			type DayEvent struct {
 				Activity  string
-				Date      fusiongo.DateTimeRange
+				Time      fusiongo.TimeRange
 				Location  string
 				Cancelled bool
 				Exception bool
@@ -167,60 +167,35 @@ var tmpl = template.Must(template.New("").
 				Events []DayEvent
 			}
 			var days []Day
-			for d := 0; d < n; d++ {
-				day := Day{
-					Date: fusiongo.GoDateTime(a.Updated).Date.AddDays(d),
-				}
-				if day.Date.Less(a.Start) || a.End.Less(day.Date) {
-					continue
-				}
-				for _, activity := range a.Activities {
-					for _, location := range activity.Locations {
-					instances:
-						for _, instance := range location.Instances {
-							if instance.Days[day.Date.Weekday()] {
-								event := DayEvent{
-									Activity: activity.Name,
-									Location: location.Name,
-									Date: fusiongo.DateTimeRange{
-										Date:      day.Date,
-										TimeRange: instance.Time,
-									},
+			for d := fusiongo.GoDateTime(a.Updated).Date; len(days) < n && !a.End.Less(d); d = d.AddDays(1) {
+				days = append(days, Day{
+					Date: d,
+				})
+			}
+			for _, activity := range a.Activities {
+				for _, location := range activity.Locations {
+					for _, instance := range location.Instances {
+						Expand(&a, instance, func(t fusiongo.DateTimeRange, cancelled, exception bool) {
+							for i := range days {
+								if days[i].Date == t.Date {
+									days[i].Events = append(days[i].Events, DayEvent{
+										Activity:  activity.Name,
+										Location:  location.Name,
+										Time:      t.TimeRange,
+										Cancelled: cancelled,
+										Exception: exception,
+									})
+									break
 								}
-								for _, exception := range instance.Exceptions {
-									if exception.Date == day.Date {
-										switch {
-										case exception.OnlyOnWeekday:
-											// do nothing
-										case exception.LastOnWeekday:
-											// do nothing
-										case exception.Excluded:
-											if exception.Date == day.Date {
-												continue instances
-											}
-										case exception.Cancelled:
-											event.Cancelled = true
-										case exception.Time != (fusiongo.TimeRange{}):
-											event.Date.TimeRange = exception.Time
-										default:
-											panic("wtf")
-										}
-										event.Exception = true
-									} else if exception.OnlyOnWeekday && day.Date.Weekday() == exception.Date.Weekday() {
-										continue instances
-									} else if exception.LastOnWeekday && day.Date.Weekday() == exception.Date.Weekday() && exception.Date.Less(day.Date) {
-										continue instances
-									}
-								}
-								day.Events = append(day.Events, event)
 							}
-						}
+						})
 					}
 				}
+			}
+			for _, day := range days {
 				slices.SortStableFunc(day.Events, func(a, b DayEvent) int {
-					return a.Date.Compare(b.Date)
+					return a.Time.Compare(b.Time)
 				})
-				days = append(days, day)
 			}
 			return days
 		},
@@ -615,19 +590,21 @@ var tmpl = template.Must(template.New("").
 					{{- with $.UpcomingDays }}
 					<section class="upcoming">
 						<div class="inner nogrow">
-							{{- range Upcoming $.Schedule . }}
+							{{- range $d := Upcoming $.Schedule . }}
 							<section class="day">
 								<h2 class="date">
-									<span class="weekday">{{printf "%.3s" .Date.Weekday}}</span>
-									<span class="date">{{printf "%.3s %d" .Date.Month .Date.Day}}</span>
+									<time datetime="{{$d.Date}}">
+										<span class="weekday">{{printf "%.3s" $d.Date.Weekday}}</span>
+										<span class="date">{{printf "%.3s %d" $d.Date.Month $d.Date.Day}}</span>
+									</time>
 								</h2>
 								<div class="events">
-									{{- range .Events }}
-									<div class="event {{- if .Cancelled }} cancelled {{- end -}}" itemscope itemtype="https://schema.org/Event">
-										<div class="activity" itemprop="name">{{.Activity}}</div>
-										<div class="location" itemprop="location">{{.Location}}</div>
-										<div class="time"><time itemprop="startDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.Start}}">{{.Date.TimeRange.Start.StringCompact}}</time></span> - <span class="end"><time itemprop="endDate" datetime="{{.Date.Date}}T{{.Date.TimeRange.End}}">{{.Date.TimeRange.End.StringCompact}}</time></div>
-										{{- if .Cancelled }}
+									{{- range $e := .Events }}
+									<div class="event {{- if $e.Cancelled }} cancelled {{- end -}}" itemscope itemtype="https://schema.org/Event">
+										<div class="activity" itemprop="name">{{$e.Activity}}</div>
+										<div class="location" itemprop="location">{{$e.Location}}</div>
+										<div class="time"><time itemprop="startDate" datetime="{{$d.Date}}T{{$e.Time.Start}}">{{$e.Time.Start.StringCompact}}</time></span> - <span class="end"><time itemprop="endDate" datetime="{{$d.Date}}T{{$e.Time.End}}">{{$e.Time.End.StringCompact}}</time></div>
+										{{- if $e.Cancelled }}
 										<meta itemprop="eventStatus" content="https://schema.org/EventCancelled">
 										{{- end }}<!-- TODO: show recurrence exception icon? -->
 									</div>
@@ -1219,6 +1196,46 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 
 	// done
 	return &ss, schedule, nil
+}
+
+// Expand calls fn for all events in i.
+func Expand(s *Schedule, i Instance, fn func(t fusiongo.DateTimeRange, cancelled, exception bool)) {
+date:
+	for date := s.Start; !s.End.Less(date); date = date.AddDays(1) {
+		if i.Days[date.Weekday()] {
+			t := fusiongo.DateTimeRange{
+				Date:      date,
+				TimeRange: i.Time,
+			}
+			var cancelled, exception bool
+			for _, x := range i.Exceptions {
+				if x.Date == date {
+					switch {
+					case x.OnlyOnWeekday:
+						// do nothing
+					case x.LastOnWeekday:
+						// do nothing
+					case x.Excluded:
+						if x.Date == date {
+							continue date
+						}
+					case x.Cancelled:
+						cancelled = true
+					case x.Time != (fusiongo.TimeRange{}):
+						t.TimeRange = x.Time
+					default:
+						panic("wtf")
+					}
+					exception = true
+				} else if x.OnlyOnWeekday && date.Weekday() == x.Date.Weekday() {
+					continue date
+				} else if x.LastOnWeekday && date.Weekday() == x.Date.Weekday() && x.Date.Less(date) {
+					continue date
+				}
+			}
+			fn(t, cancelled, exception)
+		}
+	}
 }
 
 // last returns a pointer to the last element of xs. Note that the pointer may

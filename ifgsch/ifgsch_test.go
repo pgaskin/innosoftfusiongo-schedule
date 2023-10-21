@@ -420,47 +420,17 @@ func dumpListFusion(s *fusiongo.Schedule) string {
 
 func dumpListSchedule(s *Schedule) string {
 	var dl []dumpListItem
-	for d := s.Start; !s.End.Less(d); d = d.AddDays(1) {
-		for _, a := range s.Activities {
-			for _, l := range a.Locations {
-			instances:
-				for _, i := range l.Instances {
-					if i.Days[d.Weekday()] {
-						dli := dumpListItem{
-							Time: fusiongo.DateTimeRange{
-								Date:      d,
-								TimeRange: i.Time,
-							},
-							Activity: a.Name,
-							Location: l.Name,
-						}
-						for _, x := range i.Exceptions {
-							if x.Date == d {
-								switch {
-								case x.OnlyOnWeekday:
-									// do nothing
-								case x.LastOnWeekday:
-									// do nothing
-								case x.Excluded:
-									if x.Date == d {
-										continue instances
-									}
-								case x.Cancelled:
-									dli.Cancelled = true
-								case x.Time != (fusiongo.TimeRange{}):
-									dli.Time.TimeRange = x.Time
-								default:
-									panic("wtf")
-								}
-							} else if x.OnlyOnWeekday && d.Weekday() == x.Date.Weekday() {
-								continue instances
-							} else if x.LastOnWeekday && d.Weekday() == x.Date.Weekday() && x.Date.Less(d) {
-								continue instances
-							}
-						}
-						dl = append(dl, dli)
-					}
-				}
+	for _, a := range s.Activities {
+		for _, l := range a.Locations {
+			for _, i := range l.Instances {
+				Expand(s, i, func(t fusiongo.DateTimeRange, cancelled, _ bool) {
+					dl = append(dl, dumpListItem{
+						Time:      t,
+						Activity:  a.Name,
+						Location:  l.Name,
+						Cancelled: cancelled,
+					})
+				})
 			}
 		}
 	}
