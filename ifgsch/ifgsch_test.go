@@ -323,6 +323,147 @@ func Test(t *testing.T) {
 	})
 }
 
+func TestMergeSynthetic(t *testing.T) {
+	test := func(name string, updated fusiongo.DateTime, in []fusiongo.DateTimeRange, exp ...Instance) {
+		t.Run(name, func(t *testing.T) {
+			schedule := &fusiongo.Schedule{
+				Updated: updated.In(time.Local),
+			}
+			for _, d := range in {
+				schedule.Activities = append(schedule.Activities, fusiongo.ActivityInstance{
+					Time:        d,
+					Activity:    "Test",
+					ActivityID:  "00000000-0000-0000-0000-000000000000",
+					Location:    "Test",
+					Description: "",
+					IsCancelled: false,
+					Category: []fusiongo.ActivityCategory{{
+						ID:   "1",
+						Name: "Test",
+					}},
+				})
+			}
+			s, err := Prepare(schedule, &fusiongo.Notifications{}, nil)
+			if err != nil {
+				t.Fatalf("prepare: %v", err)
+			}
+			x := &Schedule{
+				Updated:  s.Updated,
+				Modified: s.Modified,
+				Start:    s.Start,
+				End:      s.End,
+				Activities: []Activity{{
+					Name: "Test",
+					Locations: []Location{{
+						Name:      "Test",
+						Instances: exp,
+					}},
+				}},
+			}
+			if d, ok := diff("exp", x, "act", s); ok {
+				t.Fatal("incorrect\n" + d)
+			}
+		})
+	}
+	test(
+		"",
+		fgDateTime(2023, 1, 1, 0, 0, 0),
+		[]fusiongo.DateTimeRange{
+			fgDateTimeRange(2023, 1, 1, 10, 30, 11, 30),  // Su
+			fgDateTimeRange(2023, 1, 2, 10, 30, 11, 30),  // Mo
+			fgDateTimeRange(2023, 1, 3, 10, 30, 11, 30),  // Tu
+			fgDateTimeRange(2023, 1, 4, 10, 30, 11, 30),  // We
+			fgDateTimeRange(2023, 1, 5, 10, 30, 11, 30),  // Th
+			fgDateTimeRange(2023, 1, 6, 10, 30, 11, 30),  // Fr
+			fgDateTimeRange(2023, 1, 7, 10, 30, 11, 30),  // Sa
+			fgDateTimeRange(2023, 1, 8, 10, 30, 11, 30),  // Su
+			fgDateTimeRange(2023, 1, 9, 10, 30, 11, 30),  // Mo
+			fgDateTimeRange(2023, 1, 10, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 11, 10, 30, 11, 30), // We
+			fgDateTimeRange(2023, 1, 12, 10, 30, 11, 30), // Th
+			fgDateTimeRange(2023, 1, 13, 10, 30, 11, 30), // Fr
+			fgDateTimeRange(2023, 1, 14, 10, 30, 11, 30), // Sa
+		},
+		Instance{
+			Time: fgTimeRange(10, 30, 11, 30),
+			Days: days(time.Sunday, time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday),
+		},
+	)
+	test(
+		"",
+		fgDateTime(2023, 1, 1, 0, 0, 0),
+		[]fusiongo.DateTimeRange{
+			fgDateTimeRange(2023, 1, 3, 10, 30, 11, 30),  // Tu
+			fgDateTimeRange(2023, 1, 5, 10, 30, 11, 30),  // Th
+			fgDateTimeRange(2023, 1, 10, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 12, 10, 30, 11, 45), // Th
+			fgDateTimeRange(2023, 1, 17, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 19, 10, 45, 11, 30), // Th
+			fgDateTimeRange(2023, 1, 24, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 31, 10, 15, 11, 45), // Tu
+			fgDateTimeRange(2023, 2, 2, 10, 30, 11, 30),  // Th
+			fgDateTimeRange(2023, 2, 4, 8, 0, 9, 0),      // Sa
+			fgDateTimeRange(2023, 2, 5, 8, 0, 9, 0),      // Su
+		},
+		Instance{
+			Time: fgTimeRange(8, 0, 9, 0),
+			Days: days(time.Sunday, time.Saturday),
+			Exceptions: []Exception{
+				{Date: fgDate(2023, 2, 4), OnlyOnWeekday: true},
+				{Date: fgDate(2023, 2, 5), OnlyOnWeekday: true},
+			},
+		},
+		Instance{
+			Time: fgTimeRange(10, 30, 11, 30),
+			Days: days(time.Tuesday, time.Thursday),
+			Exceptions: []Exception{
+				{Date: fgDate(2023, 1, 12), Time: fgTimeRange(10, 30, 11, 45)},
+				{Date: fgDate(2023, 1, 19), Time: fgTimeRange(10, 45, 11, 30)},
+				{Date: fgDate(2023, 1, 26), Excluded: true},
+				{Date: fgDate(2023, 1, 31), Time: fgTimeRange(10, 15, 11, 45)},
+			},
+		},
+	)
+	test(
+		"",
+		fgDateTime(2023, 1, 1, 0, 0, 0),
+		[]fusiongo.DateTimeRange{
+			fgDateTimeRange(2023, 1, 3, 10, 30, 11, 30),  // Tu
+			fgDateTimeRange(2023, 1, 3, 8, 30, 9, 30),    // Tu
+			fgDateTimeRange(2023, 1, 3, 10, 30, 12, 30),  // Tu
+			fgDateTimeRange(2023, 1, 5, 10, 30, 11, 30),  // Th
+			fgDateTimeRange(2023, 1, 10, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 12, 10, 30, 11, 30), // Th
+			fgDateTimeRange(2023, 1, 24, 10, 30, 11, 30), // Tu
+			fgDateTimeRange(2023, 1, 31, 10, 15, 11, 45), // Tu
+		},
+		Instance{
+			Time: fgTimeRange(8, 30, 9, 30),
+			Days: days(time.Tuesday),
+			Exceptions: []Exception{
+				{Date: fgDate(2023, 1, 3), OnlyOnWeekday: true},
+			},
+		},
+		Instance{
+			Time: fgTimeRange(10, 30, 11, 30),
+			Days: days(time.Tuesday, time.Thursday),
+			Exceptions: []Exception{
+				{Date: fgDate(2023, 1, 12), LastOnWeekday: true},
+				{Date: fgDate(2023, 1, 17), Excluded: true},
+				{Date: fgDate(2023, 1, 31), Time: fgTimeRange(10, 15, 11, 45)},
+			},
+		},
+		Instance{
+			Time: fgTimeRange(10, 30, 12, 30),
+			Days: days(time.Tuesday),
+			Exceptions: []Exception{
+				{Date: fgDate(2023, 1, 3), OnlyOnWeekday: true},
+			},
+		},
+	)
+	// TODO: more test cases for specific situations
+}
+
 func fgDate(year int, month time.Month, day int) fusiongo.Date {
 	return fusiongo.Date{
 		Year:  year,
@@ -331,17 +472,41 @@ func fgDate(year int, month time.Month, day int) fusiongo.Date {
 	}
 }
 
+func fgTime(hour, minute, second int) fusiongo.Time {
+	return fusiongo.Time{
+		Hour:   hour,
+		Minute: minute,
+		Second: second,
+	}
+}
+
+func fgDateTime(year int, month time.Month, day, hour, minute, second int) fusiongo.DateTime {
+	return fusiongo.DateTime{
+		Date: fgDate(year, month, day),
+		Time: fgTime(hour, minute, second),
+	}
+}
+
 func fgTimeRange(h1, m1, h2, m2 int) fusiongo.TimeRange {
 	return fusiongo.TimeRange{
-		Start: fusiongo.Time{
-			Hour:   h1,
-			Minute: m1,
-		},
-		End: fusiongo.Time{
-			Hour:   h2,
-			Minute: m2,
-		},
+		Start: fgTime(h1, m1, 0),
+		End:   fgTime(h2, m2, 0),
 	}
+}
+
+func fgDateTimeRange(year int, month time.Month, day, h1, m1, h2, m2 int) fusiongo.DateTimeRange {
+	return fusiongo.DateTimeRange{
+		Date:      fgDate(year, month, day),
+		TimeRange: fgTimeRange(h1, m1, h2, m2),
+	}
+}
+
+func days(ds ...time.Weekday) [7]bool {
+	var r [7]bool
+	for _, d := range ds {
+		r[d] = true
+	}
+	return r
 }
 
 func swim(fa *fusiongo.ActivityInstance) bool {
