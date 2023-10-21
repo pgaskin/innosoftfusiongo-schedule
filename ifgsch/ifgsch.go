@@ -810,31 +810,25 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			Location string
 			Weekday  time.Weekday
 		}
-		type GroupKey struct {
-			Time fusiongo.TimeRange
-		}
 
-		// group activities by start time for each weekday
-		pgs := map[PartitionKey]map[GroupKey][]int{}
+		// partition activities by activity/location/weekday
+		pgs := map[PartitionKey]map[fusiongo.TimeRange][]int{}
 		for fai, fa := range schedule.Activities {
 			pk := PartitionKey{
 				Activity: fa.Activity,
 				Location: fa.Location,
 				Weekday:  fa.Time.Date.Weekday(),
 			}
-			gk := GroupKey{
-				Time: fa.Time.TimeRange,
-			}
 			if pgs[pk] == nil {
-				pgs[pk] = map[GroupKey][]int{}
+				pgs[pk] = map[fusiongo.TimeRange][]int{}
 			}
-			pgs[pk][gk] = append(pgs[pk][gk], fai)
+			pgs[pk][fa.Time.TimeRange] = append(pgs[pk][fa.Time.TimeRange], fai)
 		}
 
 		// sort keys for determinism (it shouldn't affect the result, but it means logs will be consistently ordered)
 		var (
 			pks  = []PartitionKey{}
-			pgks = map[PartitionKey][]GroupKey{}
+			pgks = map[PartitionKey][]fusiongo.TimeRange{}
 		)
 		for pk, ps := range pgs {
 			pks = append(pks, pk)
@@ -843,8 +837,8 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			}
 		}
 		for _, pk := range pks {
-			slices.SortStableFunc(pgks[pk], func(gk1, gk2 GroupKey) int {
-				return gk1.Time.Compare(gk2.Time)
+			slices.SortStableFunc(pgks[pk], func(gk1, gk2 fusiongo.TimeRange) int {
+				return gk1.Compare(gk2)
 			})
 		}
 		slices.SortStableFunc(pks, func(pk1, pk2 PartitionKey) int {
@@ -868,8 +862,8 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				)
 
 				type Candidate struct {
-					Into    GroupKey
-					From    GroupKey
+					Into    fusiongo.TimeRange
+					From    fusiongo.TimeRange
 					Penalty struct {
 						Exception int
 						Exclusion int
@@ -995,7 +989,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					if c1.Penalty.Duration != c2.Penalty.Duration {
 						return cmp.Compare(c1.Penalty.Duration, c2.Penalty.Duration)
 					}
-					return c1.Into.Time.Compare(c2.Into.Time) // otherwise, prefer ones with an earlier start time
+					return c1.Into.Compare(c2.Into) // otherwise, prefer ones with an earlier time range
 				})
 
 				// debug
@@ -1004,7 +998,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						slog.Debug("merge candidate",
 							"partition", fmt.Sprintf("%s - %s [%.2s]", pk.Activity, pk.Location, pk.Weekday),
 							"epoch", epoch,
-							"candidate", fmt.Sprintf("[%d %d %s] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Penalty.Duration, c.Into.Time, c.From.Time),
+							"candidate", fmt.Sprintf("[%d %d %s] %s <- %s", c.Penalty.Exception, c.Penalty.Exclusion, c.Penalty.Duration, c.Into, c.From),
 							"result", fmt.Sprintf("%s (%d += %d)", c.Result.TimeRange, len(gs[c.Into]), len(gs[c.From])),
 							"best", i == 0,
 						)
@@ -1014,7 +1008,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				// merge the best one
 				c := cs[0]
 				pgs[pk][c.Into] = c.Result.Activities
-				pgks[pk] = slices.DeleteFunc(pgks[pk], func(gk GroupKey) bool { return gk == c.From })
+				pgks[pk] = slices.DeleteFunc(pgks[pk], func(gk fusiongo.TimeRange) bool { return gk == c.From })
 				delete(pgs[pk], c.From)
 			}
 		}
