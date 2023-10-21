@@ -450,7 +450,6 @@ func dumpListSchedule(s *Schedule) string {
 								default:
 									panic("wtf")
 								}
-								break
 							} else if x.OnlyOnWeekday && d.Weekday() == x.Date.Weekday() {
 								continue instances
 							}

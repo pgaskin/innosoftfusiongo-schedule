@@ -203,7 +203,6 @@ var tmpl = template.Must(template.New("").
 											panic("wtf")
 										}
 										event.Exception = true
-										break
 									} else if exception.OnlyOnWeekday && day.Date.Weekday() == exception.Date.Weekday() {
 										continue instances
 									}
