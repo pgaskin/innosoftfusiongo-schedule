@@ -439,6 +439,8 @@ func dumpListSchedule(s *Schedule) string {
 								switch {
 								case x.OnlyOnWeekday:
 									// do nothing
+								case x.LastOnWeekday:
+									// do nothing
 								case x.Excluded:
 									if x.Date == d {
 										continue instances
@@ -451,6 +453,8 @@ func dumpListSchedule(s *Schedule) string {
 									panic("wtf")
 								}
 							} else if x.OnlyOnWeekday && d.Weekday() == x.Date.Weekday() {
+								continue instances
+							} else if x.LastOnWeekday && d.Weekday() == x.Date.Weekday() && x.Date.Less(d) {
 								continue instances
 							}
 						}

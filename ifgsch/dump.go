@@ -46,7 +46,9 @@ func dumpSchedule(b *bytes.Buffer, s *Schedule) {
 					fmt.Fprintf(b, "\t\t\t%s %s  ", x.Date.Weekday().String()[:2], x.Date)
 					switch {
 					case x.OnlyOnWeekday:
-						fmt.Fprintf(b, "ONLY\n")
+						fmt.Fprintf(b, "ONLY_WEEKDAY\n")
+					case x.LastOnWeekday:
+						fmt.Fprintf(b, "LAST_WEEKDAY\n")
 					case x.Cancelled:
 						fmt.Fprintf(b, "CANCELLED\n")
 					case x.Excluded:
@@ -94,7 +96,9 @@ func dumpEvents(b *bytes.Buffer, s *Schedule) {
 								e.Schedule = fmt.Sprintf("%-40s  ", e.Schedule)
 								switch {
 								case x.OnlyOnWeekday:
-									e.Schedule += fmt.Sprintf("ONLY")
+									e.Schedule += fmt.Sprintf("ONLY_WEEKDAY")
+								case x.LastOnWeekday:
+									e.Schedule += fmt.Sprintf("LAST_WEEKDAY")
 								case x.Cancelled:
 									e.Schedule += fmt.Sprintf("CANCELLED")
 								case x.Excluded:
@@ -106,6 +110,8 @@ func dumpEvents(b *bytes.Buffer, s *Schedule) {
 									panic("wtf")
 								}
 							} else if x.OnlyOnWeekday && d.Weekday() == x.Date.Weekday() {
+								continue instances
+							} else if x.LastOnWeekday && d.Weekday() == x.Date.Weekday() && x.Date.Less(d) {
 								continue instances
 							}
 						}

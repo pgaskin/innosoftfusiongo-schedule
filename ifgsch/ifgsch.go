@@ -50,6 +50,7 @@ type Exception struct {
 
 	// exactly one of the following fields should be set
 	OnlyOnWeekday bool
+	LastOnWeekday bool
 	Cancelled     bool
 	Excluded      bool
 	Time          fusiongo.TimeRange
@@ -191,6 +192,8 @@ var tmpl = template.Must(template.New("").
 										switch {
 										case exception.OnlyOnWeekday:
 											// do nothing
+										case exception.LastOnWeekday:
+											// do nothing
 										case exception.Excluded:
 											if exception.Date == day.Date {
 												continue instances
@@ -204,6 +207,8 @@ var tmpl = template.Must(template.New("").
 										}
 										event.Exception = true
 									} else if exception.OnlyOnWeekday && day.Date.Weekday() == exception.Date.Weekday() {
+										continue instances
+									} else if exception.LastOnWeekday && day.Date.Weekday() == exception.Date.Weekday() && exception.Date.Less(day.Date) {
 										continue instances
 									}
 								}
@@ -575,6 +580,8 @@ var tmpl = template.Must(template.New("").
 											<time datetime="{{$e.Date}}">{{FormatShortDate $e.Date}}</time>
 											{{- if $e.OnlyOnWeekday -}}
 											{{- " only" -}}
+											{{- else if $e.LastOnWeekday -}}
+											{{- " last" -}}
 											{{- else if $e.Cancelled -}}
 											{{- " cancelled" -}}
 											{{- else if $e.Excluded -}}
@@ -1127,6 +1134,18 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					}
 				}
 
+				var last [7]fusiongo.Date
+				for fai, fa := range schedule.Activities {
+					if last[fa.Time.Weekday()].Less(fa.Time.Date) && fa.Activity == activity && fa.Location == location && baseActivityTimeRange[fai] == baseTimeRange {
+						last[fa.Time.Weekday()] = fa.Time.Date
+					}
+				}
+				for wd := range last {
+					if !last[wd].Less(ss.End.AddDays(-7)) {
+						last[wd] = fusiongo.Date{}
+					}
+				}
+
 				for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
 					if ssInstance.Days[d.Weekday()] {
 						var exists bool
@@ -1161,9 +1180,18 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 									// probably just cut off since it's on the first covered day, and is before the schedule update date
 									slog.Debug("ignore exclusion on date == first schedule day != update day", slog.Group("schedule", "start", ss.Start, "updated", ss.Updated), slog.Group("activity", "time", baseTimeRange.WithDate(d), "activity", activity, "location", location))
 								} else {
+									if last[d.Weekday()] == (fusiongo.Date{}) || !last[d.Weekday()].Less(d) {
+										ssInstance.Exceptions = append(ssInstance.Exceptions, Exception{
+											Date:     d,
+											Excluded: true,
+										})
+									}
+								}
+							} else {
+								if last[d.Weekday()] == d {
 									ssInstance.Exceptions = append(ssInstance.Exceptions, Exception{
-										Date:     d,
-										Excluded: true,
+										Date:          d,
+										LastOnWeekday: true,
 									})
 								}
 							}
