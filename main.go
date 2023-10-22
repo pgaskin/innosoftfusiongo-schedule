@@ -271,19 +271,25 @@ func parseSchedules(r io.Reader) (schedules, error) {
 				}
 			}
 			if a2 == "" {
-				return nil, fmt.Errorf("line %d: expected %q, missing school_id", line, "schedule <path> <school_id>")
+				return nil, fmt.Errorf("line %d: expected %q, missing school_id", line, "schedule <path> <school_id|path_to_extend>")
 			}
 			if _, ok := cfg[a1]; ok {
 				return nil, fmt.Errorf("line %d: schedule path %q already used", line, a1)
 			}
-
-			schoolID, err := strconv.ParseInt(a2, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("line %d: invalid school_id %q: %w", line, a2, err)
+			if schoolID, err := strconv.ParseInt(a2, 10, 64); err == nil {
+				cur = a1
+				cfg[cur] = &schedule{Index: len(cfg), SchoolID: int(schoolID)}
+				continue
 			}
-			cur = a1
-			cfg[cur] = &schedule{Index: len(cfg), SchoolID: int(schoolID)}
-			continue
+			if x, ok := cfg[a2]; ok {
+				cur = a1
+				dup := *x
+				dup.Options.Footer = slices.Clone(dup.Options.Footer)
+				dup.Filter = slices.Clone(dup.Filter.(ifgsch.Filters))
+				cfg[cur] = &dup
+				continue
+			}
+			return nil, fmt.Errorf("line %d: %q is not a valid school ID or path of schedule to extend", line, a2)
 		}
 		if cur == "" {
 			return nil, fmt.Errorf("line %d: expected %q line before properties, got %q", line, "schedule <path>", key)
@@ -317,6 +323,9 @@ func parseSchedules(r io.Reader) (schedules, error) {
 		case "desc":
 			cfg[cur].Options.Description = value
 		case "footer":
+			if value == "" {
+				cfg[cur].Options.Footer = nil
+			}
 			cfg[cur].Options.Footer = append(cfg[cur].Options.Footer, template.HTML(value))
 		case "upcoming":
 			n, err := strconv.ParseInt(value, 10, 64)
