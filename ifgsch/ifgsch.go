@@ -68,6 +68,7 @@ type Options struct {
 	Description  string
 	Footer       []template.HTML
 	UpcomingDays int
+	Canonical    string
 }
 
 //go:generate go run ./fonts.go
@@ -214,6 +215,9 @@ var tmpl = template.Must(template.New("").
 			<title>{{with $.Title}}{{.}}{{else}}Schedule{{end}}</title>
 			{{- with $.Icon }}
 			<link href="{{ DataURL "image/x-icon" . }}" rel="shortcut icon" type="image/x-icon">
+			{{- end }}
+			{{- with $.Canonical }}
+			<link rel="canonical" href="{{.}}">
 			{{- end }}
 			<style>
 				{{MD3 $.Color}}

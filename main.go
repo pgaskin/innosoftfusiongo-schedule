@@ -47,6 +47,7 @@ var (
 	NoCache     = flag.Bool("no-cache", false, "Disable cache headers for schedule")
 	NoHome      = flag.Bool("no-home", false, "Disable the schedule list")
 	NoUpcoming  = flag.Bool("no-upcoming", false, "Don't show upcoming events")
+	Canonical   = flag.String("canonical", "", "URL base to use for generating link[rel=canonical]")
 )
 
 func flag_Level(name string, value slog.Level, usage string) *slog.Level {
@@ -148,6 +149,11 @@ func main() {
 				cfg[x].Options.UpcomingDays = 0
 			}
 		}
+		if *Canonical != "" {
+			for x := range cfg {
+				cfg[x].Options.Canonical = strings.TrimRight(*Canonical, "/") + "/" + x
+			}
+		}
 		scheduleHandlers = make(map[string]http.Handler, len(cfg))
 		for _, path := range cfg.Paths() {
 			x := cfg[path]
@@ -169,7 +175,11 @@ func main() {
 			slog.Info("schedule registered", "url", "/"+path)
 		}
 		if !*NoHome {
-			scheduleHandlers[""] = scheduleListHandler(cfg)
+			var canonical string
+			if *Canonical != "" {
+				canonical = strings.TrimRight(*Canonical, "/") + "/"
+			}
+			scheduleHandlers[""] = scheduleListHandler(cfg, canonical)
 		}
 	}
 
@@ -604,7 +614,7 @@ func scheduleHandler(cache, gzip bool, schedule memcache.Cache[scheduleResult]) 
 	})
 }
 
-func scheduleListHandler(cfg schedules) http.Handler {
+func scheduleListHandler(cfg schedules, canonical string) http.Handler {
 	var buf bytes.Buffer
 	buf.WriteString(`<!DOCTYPE html><html lang="en"><head>`)
 	buf.WriteString(`<meta charset="utf-8">`)
@@ -612,6 +622,9 @@ func scheduleListHandler(cfg schedules) http.Handler {
 	buf.WriteString(`<meta name="generator" content="ifgsch">`)
 	buf.WriteString(`<meta name="color-scheme" content="light dark">`)
 	buf.WriteString(`<title>Schedules</title>`)
+	if canonical != "" {
+		buf.WriteString(`<link rel="canonical" href="` + html.EscapeString(canonical) + `">`)
+	}
 	buf.WriteString(`<style>`)
 	buf.WriteString(` html { color-scheme: light dark; background: #fafafa; color: #000 }`)
 	buf.WriteString(` body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif }`)
