@@ -159,6 +159,13 @@ func main() {
 					Logger: slog.Default(),
 				},
 			))
+			if x.Unlisted {
+				next := scheduleHandlers[path]
+				scheduleHandlers[path] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("X-Robots-Tag", "noindex")
+					next.ServeHTTP(w, r)
+				})
+			}
 			slog.Info("schedule registered", "url", "/"+path)
 		}
 		if !*NoHome {
@@ -232,6 +239,7 @@ type schedule struct {
 	SchoolID int
 	Options  ifgsch.Options
 	Filter   ifgsch.Filter
+	Unlisted bool
 }
 
 func parseSchedules(r io.Reader) (schedules, error) {
@@ -334,6 +342,14 @@ func parseSchedules(r io.Reader) (schedules, error) {
 				return nil, fmt.Errorf("line %d: upcoming days must be greater than zero if specified, and lower than 90, got %d", line, n)
 			}
 			cfg[cur].Options.UpcomingDays = int(n)
+		case "unlisted":
+			if cfg[cur].Unlisted {
+				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
+			}
+			if value != "" {
+				return nil, fmt.Errorf("line %d: does not take a value, got %q", line, value)
+			}
+			cfg[cur].Unlisted = true
 		default:
 			key, ok := strings.CutPrefix(key, "filter.")
 			if !ok {
@@ -628,10 +644,12 @@ func scheduleListHandler(cfg schedules) http.Handler {
 	buf.WriteString(`<h1 class="title">Schedules</h1>`)
 	buf.WriteString(`<nav class="schedules">`)
 	for _, path := range cfg.Paths() {
-		fmt.Fprintf(&buf, `<a href="%s"><div class="title">%s</div><div class="desc">%s</div></a>`,
-			html.EscapeString("/"+path),
-			html.EscapeString(cfg[path].Options.Title),
-			html.EscapeString(cfg[path].Options.Description))
+		if !cfg[path].Unlisted {
+			fmt.Fprintf(&buf, `<a href="%s"><div class="title">%s</div><div class="desc">%s</div></a>`,
+				html.EscapeString("/"+path),
+				html.EscapeString(cfg[path].Options.Title),
+				html.EscapeString(cfg[path].Options.Description))
+		}
 	}
 	buf.WriteString(`</nav>`)
 	buf.WriteString(`<footer>`)
