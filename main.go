@@ -290,9 +290,6 @@ func parseSchedules(r io.Reader) (schedules, error) {
 		}
 		switch key {
 		case "color":
-			if cfg[cur].Options.Color != "" {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			if len(value) != 3 && len(value) != 6 {
 				return nil, fmt.Errorf("line %d: invalid hex color %q", line, value)
 			}
@@ -307,9 +304,6 @@ func parseSchedules(r io.Reader) (schedules, error) {
 			}
 			cfg[cur].Options.Color = value
 		case "icon":
-			if cfg[cur].Options.Icon != nil {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			b, err := base64.StdEncoding.DecodeString(value)
 			if err != nil {
 				return nil, fmt.Errorf("line %d: invalid base64: %w", line, err)
@@ -319,21 +313,12 @@ func parseSchedules(r io.Reader) (schedules, error) {
 			}
 			cfg[cur].Options.Icon = b
 		case "title":
-			if cfg[cur].Options.Title != "" {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			cfg[cur].Options.Title = value
 		case "desc":
-			if cfg[cur].Options.Description != "" {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			cfg[cur].Options.Description = value
 		case "footer":
 			cfg[cur].Options.Footer = append(cfg[cur].Options.Footer, template.HTML(value))
 		case "upcoming":
-			if cfg[cur].Options.UpcomingDays != 0 {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			n, err := strconv.ParseInt(value, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("line %d: invalid number %q: %w", line, value, err)
@@ -343,9 +328,6 @@ func parseSchedules(r io.Reader) (schedules, error) {
 			}
 			cfg[cur].Options.UpcomingDays = int(n)
 		case "unlisted":
-			if cfg[cur].Unlisted {
-				return nil, fmt.Errorf("line %d: duplicate property %q", line, key)
-			}
 			if value != "" {
 				return nil, fmt.Errorf("line %d: does not take a value, got %q", line, value)
 			}
