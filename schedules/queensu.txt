@@ -17,6 +17,7 @@ schedule swim 110
 
 	# sometimes, they are inconsistent when they manually add exceptions
 	filter.activity map "Open Rec Swim" "Rec Swim"
+	filter.activity map "Member Lanes" "Member Lane Swim"
 
 schedule rec 110
 	color    004f16
