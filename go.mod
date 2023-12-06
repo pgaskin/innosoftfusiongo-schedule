@@ -5,7 +5,7 @@ go 1.21.1
 require (
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
 	github.com/evanw/esbuild v0.19.5
-	github.com/pgaskin/innosoftfusiongo-ical v0.0.14
+	github.com/pgaskin/innosoftfusiongo-ical v0.0.15
 	github.com/pmezard/go-difflib v1.0.0
 )
 
