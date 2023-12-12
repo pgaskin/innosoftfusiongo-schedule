@@ -607,7 +607,7 @@ var tmpl = template.Must(template.New("").
 									<div class="event {{- if $e.Cancelled }} cancelled {{- end -}}" itemscope itemtype="https://schema.org/Event">
 										<div class="activity" itemprop="name">{{$e.Activity}}</div>
 										<div class="location" itemprop="location">{{$e.Location}}</div>
-										<div class="time"><time itemprop="startDate" datetime="{{$d.Date}}T{{$e.Time.Start}}">{{$e.Time.Start.StringCompact}}</time></span> - <span class="end"><time itemprop="endDate" datetime="{{$d.Date}}T{{$e.Time.End}}">{{$e.Time.End.StringCompact}}</time></div>
+										<div class="time"><time itemprop="startDate" datetime="{{$d.Date}}T{{$e.Time.Start}}">{{$e.Time.Start.StringCompact}}</time> - <time itemprop="endDate" datetime="{{$d.Date}}T{{$e.Time.End}}">{{$e.Time.End.StringCompact}}</time></div>
 										{{- if $e.Cancelled }}
 										<meta itemprop="eventStatus" content="https://schema.org/EventCancelled">
 										{{- end }}<!-- TODO: show recurrence exception icon? -->
