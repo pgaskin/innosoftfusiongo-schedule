@@ -730,6 +730,12 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		schedule = &newSchedule
 	}
 
+	// trim activity names
+	for fai, fa := range schedule.Activities {
+		fa.Activity = strings.TrimSpace(fa.Activity)
+		schedule.Activities[fai] = fa
+	}
+
 	// convert fake cancellations to real ones
 	for fai, fa := range schedule.Activities {
 		if fa.IsCancelled {

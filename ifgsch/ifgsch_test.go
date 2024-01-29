@@ -320,6 +320,40 @@ func Test(t *testing.T) {
 				}
 			})
 		}
+
+		if d == "20240129" {
+			t.Run("MiscFakeCancellations", func(t *testing.T) {
+				s, err := FetchAndPrepare(context.Background(), 110, FilterFunc(swim))
+				if err != nil {
+					t.Fatalf("prepare: %v", err)
+				}
+
+				// this day has some funny cases, like trailing spaces after fake-cancelled event titles...
+
+				var n, nc int
+				for _, activity := range s.Activities {
+					for _, location := range activity.Locations {
+						for _, instance := range location.Instances {
+							Expand(s, instance, func(dt fusiongo.DateTimeRange, cancelled, exception bool) {
+								if dt.Date.Year == 2024 && dt.Date.Month == time.January && dt.Date.Day == 29 {
+									n++
+									if cancelled {
+										nc++
+									}
+									t.Logf("activity=%q location=%q time=%q cancelled=%t exception=%t", activity.Name, location.Name, dt.StringCompact(), cancelled, exception)
+								}
+							})
+						}
+					}
+				}
+				if n != 4 {
+					t.Errorf("expected 4 lane swim events, got %d", n)
+				}
+				if nc != n {
+					t.Errorf("expected all lane swim events to be cancelled")
+				}
+			})
+		}
 	})
 }
 
