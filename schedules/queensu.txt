@@ -24,6 +24,7 @@ schedule swim 110
 	filter.activity map "Open Rec Swim" "Rec Swim"
 	filter.activity map "Member Lanes" "Member Lane Swim"
 	filter.activity map "Women's Lane Swim" "Women's Only Lane Swim"
+	filter.activity map "Recreational Swim" "Rec Swim"
 
 schedule rec 110
 	color    004f16
