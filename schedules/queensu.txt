@@ -9,11 +9,6 @@ schedule swim 110
 	footer   See <a href="https://ifgical.api.pgaskin.net/110?category_id=721#view=week">ifgical.api.pgaskin.net/110</a> to add this to your calendar.
 	upcoming 14
 
-	# ical stuff
-	ics         234eaac8-ef10-4cd1-b74a-33afc0b18b33
-	ics.tz      America/Toronto
-	ics.title   ARC Swim
-
 	# category "Lane Swim Schedules"
 	filter.category_id in 721
 
@@ -36,11 +31,6 @@ schedule rec 110
 	footer   See <a href="https://ifgical.api.pgaskin.net/110?category_id=321#view=list">ifgical.api.pgaskin.net/110</a> to add this to your calendar.
 	upcoming 7
 
-	# ical stuff
-	ics         2179f4c4-77ca-44d2-983f-bfd1896a090f
-	ics.tz      America/Toronto
-	ics.title   ARC Open Rec
-
 	# category "Open Rec"
 	filter.category_id in 321
 
@@ -57,11 +47,6 @@ schedule prog 110
 	footer   Like the official <a rel="nofollow" href="https://gogaelsgo.com/app">app</a>, but easier to see a longer time range.
 	footer   See <a href="https://ifgical.api.pgaskin.net/110?category_id=323#view=week">ifgical.api.pgaskin.net/110</a> to add this to your calendar.
 	upcoming 14
-
-	# ical stuff
-	ics         71be3e1c-2a70-4f17-a091-fa23ad58004c
-	ics.tz      America/Toronto
-	ics.title   ARC Programs
 
 	# category "In-Person Classes"
 	filter.category_id in 323
