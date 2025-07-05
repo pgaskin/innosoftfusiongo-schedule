@@ -754,6 +754,12 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " - CANCELED")
 		}
 		if !fa.IsCancelled {
+			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " [CANCELLED]")
+		}
+		if !fa.IsCancelled {
+			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " [CANCELED]")
+		}
+		if !fa.IsCancelled {
 			continue
 		}
 		slog.Debug("convert fake cancellation", slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
