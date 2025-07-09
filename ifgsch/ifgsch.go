@@ -748,16 +748,21 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			fa.Activity, fa.IsCancelled = strings.CutPrefix(fa.Activity, "CANCELED - ")
 		}
 		if !fa.IsCancelled {
-			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " - CANCELLED")
-		}
-		if !fa.IsCancelled {
-			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " - CANCELED")
-		}
-		if !fa.IsCancelled {
-			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " [CANCELLED]")
-		}
-		if !fa.IsCancelled {
-			fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, " [CANCELED]")
+			for _, suffix := range []string{
+				// TODO: optimize and/or replace with regexp
+				" - CANCELLED", " - CANCELED",
+				" [CANCELLED]", " [CANCELED]",
+				" [Cancelled]", " [Canceled]",
+				" [cancelled]", " [canceled]",
+				" (CANCELLED)", " (CANCELED)",
+				" (Cancelled)", " (Canceled)",
+				" (cancelled)", " (canceled)",
+			} {
+				fa.Activity, fa.IsCancelled = strings.CutSuffix(fa.Activity, suffix)
+				if fa.IsCancelled {
+					break
+				}
+			}
 		}
 		if !fa.IsCancelled {
 			continue
