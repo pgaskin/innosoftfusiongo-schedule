@@ -730,8 +730,10 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		schedule = &newSchedule
 	}
 
-	// trim activity names
+	// clean activity names
 	for fai, fa := range schedule.Activities {
+		fa.Activity = strings.TrimSpace(fa.Activity)
+		fa.Activity = strings.TrimSuffix(fa.Activity, "- TIME CHANGE!")
 		fa.Activity = strings.TrimSpace(fa.Activity)
 		schedule.Activities[fai] = fa
 	}
