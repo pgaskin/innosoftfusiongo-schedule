@@ -1,127 +1,116 @@
-//go:build ignore
-
-package main
+package ifgsch
 
 import (
+	_ "embed"
 	"fmt"
-	"io"
 	"log/slog"
-	"mime"
-	"net/http"
-	"net/url"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
+	"sync"
+	"unicode"
+
+	"github.com/pgaskin/go-hbsubset"
+	"github.com/pgaskin/go-woff2"
 )
 
-func main() {
-	asap := url.Values{
-		"family": {"Asap:wdth,wght@87.5,100..900"},
-		"text":   {""},
-	}
-	for _, r := range [][2]rune{
-		{33, 126},
-		{'\u2002', '\u201E'},
-		{'\u2022', '\u2022'},
-		{'\u2026', '\u2026'},
-	} {
-		for c := r[0]; c <= r[1]; c++ {
-			asap["text"][0] += string(c)
-		}
-	}
-	font("asap.woff2", asap)
+//go:generate go run fetch.go https://github.com/Omnibus-Type/Asap/raw/ca471c0ccf90a5c66155d4bcaa020859804ffd00/fonts/variable/Asap%5Bwdth%2Cwght%5D.ttf asap.ttf
+//go:generate go run fetch.go https://github.com/google/material-design-icons/raw/fe742c4072d4e3b8b899170109d9f710e89f082e/variablefont/MaterialSymbolsOutlined%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf symbols.ttf
 
-	symbols := url.Values{
-		"family": {"Material Symbols Outlined:opsz,wght,FILL,GRAD@20,300,0,0"},
-		"text": {string([]rune{
-			'\uE192', // schedule
-			'\uE55F', // location_on
-		})},
-	}
-	font("symbols.woff2", symbols)
+var (
+	//go:embed asap.ttf
+	asapTTF []byte
+	//go:embed symbols.ttf
+	symbolsTTF []byte
+)
 
-	// note: use https://wakamaifondue.com/ to see font details
+var keepNames = []hbsubset.NameID{
+	hbsubset.NameUniqueID,
+	hbsubset.NameCopyright,
+	hbsubset.NameFontFamily,
+	hbsubset.NameFontSubfamily,
+	hbsubset.NameTypographicFamily,
+	hbsubset.NameTypographicSubfamily,
+	hbsubset.NameFullName,
+	hbsubset.NameMacFullName,
+	hbsubset.NamePostscriptName,
+	hbsubset.NameManufacturer,
+	hbsubset.NameDescription,
+	hbsubset.NameVariationsPSPrefix,
 }
 
-func font(name string, params url.Values) {
-	css, err := css2(params)
+var asapWOFF2 = mustOnce("subset asap", func() ([]byte, error) {
+	sub, err := hbsubset.Subset(asapTTF, 0, &hbsubset.Options{
+		UnicodeRanges: &unicode.RangeTable{
+			R16: []unicode.Range16{
+				{Stride: 1, Lo: 32, Hi: 126},            // space + ascii printable
+				{Stride: 1, Lo: '\u2002', Hi: '\u201e'}, // spaces, smart punctuation
+				{Stride: 1, Lo: '\u2022', Hi: '\u2022'}, // bullet
+				{Stride: 1, Lo: '\u2026', Hi: '\u2026'}, // ellipsis
+			},
+		},
+		PinAllAxesToDefault: true,
+		AxisRanges: map[hbsubset.Tag]hbsubset.AxisRange{
+			hbsubset.MakeTag("wght"): {Min: 100, Max: 900, Default: 400},
+		},
+		PinAxes: map[hbsubset.Tag]float32{
+			hbsubset.MakeTag("wdth"): 87.5, // SemiCondensed
+		},
+		LayoutFeatures: []hbsubset.Tag{
+			hbsubset.MakeTag("kern"),
+			hbsubset.MakeTag("liga"),
+		},
+		LayoutScripts: []hbsubset.Tag{
+			hbsubset.MakeTag("latn"), // latin
+		},
+		NameIDs:       keepNames,
+		NameLanguages: []uint32{1033}, // english
+	})
 	if err != nil {
-		slog.Error("failed to fetch font css", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("subset: %w", err)
 	}
-
-	if n := strings.Count(css, "@font-face"); n != 1 {
-		slog.Error("expected a single variable font-face declaration, got "+strconv.Itoa(n), "css", css)
-		os.Exit(1)
-	}
-
-	var u string
-	if m := regexp.MustCompile(`url\((.+?)\)`).FindStringSubmatch(css); m == nil {
-		slog.Error("failed to extract font url", "css", css)
-		os.Exit(1)
-	} else {
-		u = m[1]
-	}
-
-	buf, err := woff2(u)
+	enc, err := woff2.Encode(sub, nil)
 	if err != nil {
-		slog.Error("failed to fetch font file", "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("woff2: %w", err)
 	}
+	return enc, nil
+})
 
-	if err := os.WriteFile(name, buf, 0644); err != nil {
-		slog.Error("failed to write font file", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("done", "name", name, "size", len(buf))
-}
-
-func css2(p url.Values) (string, error) {
-	slog.Info("fetching font css", "params", p.Encode())
-
-	req, err := http.NewRequest(http.MethodGet, "https://fonts.googleapis.com/css2?"+p.Encode(), nil)
+var symbolsWOFF2 = mustOnce("subset symbols", func() ([]byte, error) {
+	sub, err := hbsubset.Subset(symbolsTTF, 0, &hbsubset.Options{
+		Unicodes: []rune{
+			'', // schedule
+			'', // location_on
+		},
+		PinAllAxesToDefault: true,
+		PinAxes: map[hbsubset.Tag]float32{
+			hbsubset.MakeTag("opsz"): 20,
+			hbsubset.MakeTag("wght"): 300,
+			hbsubset.MakeTag("FILL"): 0,
+			hbsubset.MakeTag("GRAD"): 0,
+		},
+		DropTables: []hbsubset.Tag{
+			hbsubset.MakeTag("GSUB"), // ligature name lookups, unused
+		},
+		NameIDs:       keepNames,
+		NameLanguages: []uint32{1033}, // english
+	})
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("subset: %w", err)
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0") // supports variable woff2
-
-	resp, err := http.DefaultClient.Do(req)
+	enc, err := woff2.Encode(sub, nil)
 	if err != nil {
-		return "", err
+		return nil, fmt.Errorf("woff2: %w", err)
 	}
-	defer resp.Body.Close()
+	return enc, nil
+})
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("response status %d (%s)", resp.StatusCode, resp.Status)
-	}
+func init() {
+	go func() {
+		slog.Info("subsetting fonts")
+		defer slog.Info("fonts ready")
 
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(buf), nil
-}
+		var wg sync.WaitGroup
+		defer wg.Wait()
 
-func woff2(u string) ([]byte, error) {
-	slog.Info("fetching font woff2", "url", u)
-
-	resp, err := http.Get(u)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("response status %d (%s)", resp.StatusCode, resp.Status)
-	}
-
-	if ct := resp.Header.Get("Content-Type"); ct != "" {
-		if mt, _, _ := mime.ParseMediaType(ct); mt != "font/woff2" {
-			return nil, fmt.Errorf("unexpected mimetype %q", ct)
-		}
-	}
-
-	return io.ReadAll(resp.Body)
+		wg.Go(func() { asapWOFF2() })
+		wg.Go(func() { symbolsWOFF2() })
+	}()
 }

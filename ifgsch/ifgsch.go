@@ -4,7 +4,6 @@ package ifgsch
 import (
 	"cmp"
 	"context"
-	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"html/template"
@@ -70,14 +69,6 @@ type Options struct {
 	UpcomingDays int
 	Canonical    string
 }
-
-//go:generate go run ./fonts.go
-var (
-	//go:embed asap.woff2
-	asap []byte
-	//go:embed symbols.woff2
-	symbols []byte
-)
 
 var colorCSS sync.Map
 var tmpl = template.Must(template.New("").
@@ -147,10 +138,17 @@ var tmpl = template.Must(template.New("").
 			return template.CSS(v.(string)), nil
 		},
 		"AsapFontURL": func() template.CSS {
-			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(asap) + "') format('woff2-variations')")
+			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(asapWOFF2()) + "') format('woff2-variations')"), nil
 		},
 		"SymbolsFontURL": func() template.CSS {
-			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(symbols) + "') format('woff2')")
+			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(symbolsWOFF2()) + "') format('woff2')"), nil
+		},
+		"SymbolsFontURL": func() (template.CSS, error) {
+			b, err := symbolsWOFF2()
+			if err != nil {
+				return "", err
+			}
+			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(b) + "') format('woff2')"), nil
 		},
 		"DataURL": func(mimetype string, data []byte) template.URL {
 			return template.URL("data:" + mimetype + ";base64," + base64.StdEncoding.EncodeToString(data))
@@ -1352,4 +1350,14 @@ func unindent(crlf bool, s string) string {
 		}
 	}
 	return s
+}
+
+func mustOnce[T any](what string, fn func() (T, error)) func() T {
+	return sync.OnceValue(func() T {
+		v, err := fn()
+		if err != nil {
+			panic(fmt.Errorf("%s: %w", what, err))
+		}
+		return v
+	})
 }
