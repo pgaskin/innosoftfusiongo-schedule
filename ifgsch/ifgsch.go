@@ -4,7 +4,6 @@ package ifgsch
 import (
 	"cmp"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,8 +15,10 @@ import (
 	"time"
 
 	"github.com/pgaskin/innosoftfusiongo-ical/fusiongo"
-	"github.com/pgaskin/innosoftfusiongo-schedule/m3color"
 )
+
+//go:generate go tool templ fmt .
+//go:generate go tool templ generate -include-version=false
 
 type Schedule struct {
 	Updated       time.Time
@@ -70,277 +71,6 @@ type Options struct {
 	Canonical    string
 }
 
-var colorCSS sync.Map
-var tmpl = template.Must(template.New("").
-	Funcs(template.FuncMap{
-		"Weekday": func(i int) time.Weekday {
-			return time.Weekday(i)
-		},
-		"FormatShortDate": func(d fusiongo.Date) string {
-			return d.Month.String()[:3] + " " + strconv.Itoa(d.Day)
-		},
-		"FormatTime": func(d fusiongo.Time) string {
-			return d.StringCompact()
-		},
-		"Range": func(n int) []int {
-			s := make([]int, n)
-			for i := range s {
-				s[i] = i
-			}
-			return s
-		},
-		"LocationWeekdayInstances": func(l Location) int {
-			var n [7]int
-			for _, x := range l.Instances {
-				for d, b := range x.Days {
-					if b {
-						n[d]++
-					}
-				}
-			}
-			var m int
-			for _, x := range n {
-				if x > m {
-					m = x
-				}
-			}
-			return m
-		},
-		"LocationWeekdayInstance": func(l Location, w time.Weekday, i int) *Instance {
-			var c int
-			for xi, x := range l.Instances {
-				if x.Days[w] {
-					if c == i {
-						// quick sanity check to prevent bugs from being silently swallowed
-						for _, c := range x.Exceptions {
-							if !x.Days[c.Date.Weekday()] {
-								panic("wtf: instance has exceptions on weekdays the instance isn't on")
-							}
-						}
-						return &l.Instances[xi]
-					}
-					c++
-				}
-			}
-			return nil
-		},
-		"MD3": func(c string) (template.CSS, error) {
-			c = strings.ToLower(c)
-			v, ok := colorCSS.Load(c)
-			if !ok {
-				if x, err := m3color.PaletteCSS(c); err != nil {
-					return "", fmt.Errorf("generate md3 palette css for color %s: %w", c, err)
-				} else {
-					v = x
-				}
-				colorCSS.Store(c, v)
-			}
-			return template.CSS(v.(string)), nil
-		},
-		"AsapFontURL": func() template.CSS {
-			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(asapWOFF2()) + "') format('woff2-variations')")
-		},
-		"SymbolsFontURL": func() template.CSS {
-			return template.CSS("url('data:font/woff2;base64," + base64.StdEncoding.EncodeToString(symbolsWOFF2()) + "') format('woff2')")
-		},
-		"StyleCSS": func() template.CSS {
-			return template.CSS(styleCSS())
-		},
-		"DataURL": func(mimetype string, data []byte) template.URL {
-			return template.URL("data:" + mimetype + ";base64," + base64.StdEncoding.EncodeToString(data))
-		},
-		"Upcoming": func(a Schedule, n int) any {
-			type DayEvent struct {
-				Activity  string
-				Time      fusiongo.TimeRange
-				Location  string
-				Cancelled bool
-				Exception bool
-			}
-			type Day struct {
-				Date   fusiongo.Date
-				Events []DayEvent
-			}
-			var days []Day
-			for d := fusiongo.GoDateTime(a.Updated).Date; len(days) < n && !a.End.Less(d); d = d.AddDays(1) {
-				days = append(days, Day{
-					Date: d,
-				})
-			}
-			for _, activity := range a.Activities {
-				for _, location := range activity.Locations {
-					for _, instance := range location.Instances {
-						Expand(&a, instance, func(t fusiongo.DateTimeRange, cancelled, exception bool) {
-							for i := range days {
-								if days[i].Date == t.Date {
-									days[i].Events = append(days[i].Events, DayEvent{
-										Activity:  activity.Name,
-										Location:  location.Name,
-										Time:      t.TimeRange,
-										Cancelled: cancelled,
-										Exception: exception,
-									})
-									break
-								}
-							}
-						})
-					}
-				}
-			}
-			for _, day := range days {
-				slices.SortStableFunc(day.Events, func(a, b DayEvent) int {
-					return a.Time.Compare(b.Time)
-				})
-			}
-			return days
-		},
-	}).
-	Parse(unindent(false, `
-		<!DOCTYPE html>
-		<html lang="en">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=760,user-scalable=yes">
-			<meta name="generator" content="ifgsch">
-			<meta name="color-scheme" content="light dark">
-			{{- with $.Description }}
-			<meta name="description" content="{{.}}">
-			{{- end }}
-			<title>{{with $.Title}}{{.}}{{else}}Schedule{{end}}</title>
-			{{- with $.Icon }}
-			<link href="{{ DataURL "image/x-icon" . }}" rel="shortcut icon" type="image/x-icon">
-			{{- end }}
-			{{- with $.Canonical }}
-			<link rel="canonical" href="{{.}}">
-			{{- end }}
-			<style>
-				{{MD3 $.Color}}
-				@font-face {
-					font-family: 'Asap SemiCondensed';
-					font-style: normal;
-					font-weight: 100 900;
-					font-stretch: 87.5%;
-					font-display: swap;
-					src: {{AsapFontURL}};
-				}
-				@font-face {
-					font-family: 'Material Symbols Subset';
-					font-style: normal;
-					font-weight: 300;
-					src: {{SymbolsFontURL}};
-				}
-				{{StyleCSS}}
-			</style>
-		</head>
-		<body>
-			<main class="wrapper">
-				<div class="shrink">
-					<h1 class="title">{{with $.Title}}{{.}}{{else}}Schedule{{end}}</h1>
-					<section class="schedule">
-						<table>
-							<thead>
-								<tr class="week">
-									<th scope="row" class="range"><time datetime="{{$.Start}}">{{FormatShortDate $.Start}}</time> - <time datetime="{{$.End}}">{{FormatShortDate $.End}}</time></th>
-									{{- range $w := Range 7 }}
-									<th scope="col" class="weekday">{{Weekday $w}}</th>
-									{{- end }}
-								</tr>
-							</thead>
-							<tbody>
-								{{- range $a := $.Activities }}
-								<tr class="activity">
-									<th scope="colgroup" class="activity" colspan="8">{{$a.Name}}</th>
-								</tr>
-								{{- range $c := $a.Locations}}
-								{{- range $i := Range (LocationWeekdayInstances $c) }}
-								<tr class="location">
-									{{- if not $i }}
-									<th scope="rowgroup" class="location" rowspan="{{LocationWeekdayInstances $c}}">{{$c.Name}}</th>
-									{{- end }}
-									{{- range $w := Range 7 }}
-									{{- with $x := LocationWeekdayInstance $c (Weekday $w) $i }}
-									<td class="instance">
-										<div class="time"><time datetime="{{$x.Time.Start}}">{{FormatTime $x.Time.Start}}</time> - <time datetime="{{$x.Time.End}}">{{FormatTime $x.Time.End}}</time></div>
-										{{- range $e := $x.Exceptions }}
-										{{- if eq $e.Date.Weekday (Weekday $w) }}
-										<div class="exception">
-											<time datetime="{{$e.Date}}">{{FormatShortDate $e.Date}}</time>
-											{{- if $e.OnlyOnWeekday -}}
-											{{- " only" -}}
-											{{- else if $e.LastOnWeekday -}}
-											{{- " last" -}}
-											{{- else if $e.Cancelled -}}
-											{{- " cancelled" -}}
-											{{- else if $e.Excluded -}}
-											{{- " excluded" -}}
-											{{- else if $e.Time -}}
-											{{- " " -}}<time datetime="{{$e.Time.Start}}">{{FormatTime $e.Time.Start}}</time>-<time datetime="{{$e.Time.End}}">{{FormatTime $e.Time.End}}</time>
-											{{- else -}}
-											{{- " ?!?" -}}
-											{{- end -}}
-										</div>
-										{{- end }}
-										{{- end }}
-									</td>
-									{{- else }}
-									<td class="instance empty"></td>
-									{{- end }}
-									{{- end }}
-								</tr>
-								{{- end }}
-								{{- end }}
-								{{- end }}
-							</tbody>
-						</table>
-					</section>
-					{{- range $n := $.Notifications }}
-					<section class="notification">
-						<p class="text nogrow">{{$n.Text}}</p>
-						<div class="date nogrow"><time datetime="{{$n.Sent.Date.String}}T{{$n.Sent.Time.String}}">{{$n.Sent.Date}} {{$n.Sent.Time}}</time></div>
-					</section>
-					{{- end }}
-					{{- with $.UpcomingDays }}
-					<section class="upcoming">
-						<div class="inner nogrow">
-							{{- range $d := Upcoming $.Schedule . }}
-							<section class="day">
-								<h2 class="date">
-									<time datetime="{{$d.Date}}">
-										<span class="weekday">{{printf "%.3s" $d.Date.Weekday}}</span>
-										<span class="date">{{printf "%.3s %d" $d.Date.Month $d.Date.Day}}</span>
-									</time>
-								</h2>
-								<div class="events">
-									{{- range $e := .Events }}
-									<div class="event {{- if $e.Cancelled }} cancelled {{- end -}}" itemscope itemtype="https://schema.org/Event">
-										<div class="activity" itemprop="name">{{$e.Activity}}</div>
-										<div class="location" itemprop="location">{{$e.Location}}</div>
-										<div class="time"><time itemprop="startDate" datetime="{{$d.Date}}T{{$e.Time.Start}}">{{$e.Time.Start.StringCompact}}</time> - <time itemprop="endDate" datetime="{{$d.Date}}T{{$e.Time.End}}">{{$e.Time.End.StringCompact}}</time></div>
-										{{- if $e.Cancelled }}
-										<meta itemprop="eventStatus" content="https://schema.org/EventCancelled">
-										{{- end }}<!-- TODO: show recurrence exception icon? -->
-									</div>
-									{{- end }}
-								</div>
-							</section>
-							{{- end }}
-						</div>
-					</section>
-					{{- end }}
-					<footer class="info">
-						<p class="nogrow">Updated <time datetime="{{$.Updated.UTC.Format "2006-01-02T15:04:05Z"}}">{{$.Updated.Local.Format "2006-01-02 15:04:05 MST"}}</time>.</p>
-						<p class="nogrow">Modified <time datetime="{{$.Modified.UTC.Format "2006-01-02T15:04:05Z"}}">{{$.Modified.Local.Format "2006-01-02 15:04:05 MST"}}</time>.</p>
-						{{- range $.Footer }}
-						<p class="nogrow">{{.}}</p>
-						{{- end }}
-					</footer>
-				</div>
-			</main>
-		</body>
-		</html>
-	`)),
-)
-
 // Render renders a schedule with the provided options.
 func Render(w io.Writer, o *Options, s *Schedule) error {
 	if o == nil {
@@ -349,10 +79,7 @@ func Render(w io.Writer, o *Options, s *Schedule) error {
 	if s == nil {
 		return fmt.Errorf("no schedule provided")
 	}
-	return tmpl.Execute(w, struct {
-		*Options
-		*Schedule
-	}{o, s})
+	return page(o, s).Render(context.Background(), w)
 }
 
 // Filter filters and transforms schedule activities.
@@ -963,6 +690,98 @@ date:
 	}
 }
 
+type upcomingDay struct {
+	Date   fusiongo.Date
+	Events []upcomingEvent
+}
+
+type upcomingEvent struct {
+	Activity  string
+	Time      fusiongo.TimeRange
+	Location  string
+	Cancelled bool
+	Exception bool
+}
+
+func upcoming(s *Schedule, n int) []upcomingDay {
+	var days []upcomingDay
+	for d := fusiongo.GoDateTime(s.Updated).Date; len(days) < n && !s.End.Less(d); d = d.AddDays(1) {
+		days = append(days, upcomingDay{Date: d})
+	}
+	for _, activity := range s.Activities {
+		for _, location := range activity.Locations {
+			for _, instance := range location.Instances {
+				Expand(s, instance, func(t fusiongo.DateTimeRange, cancelled, exception bool) {
+					for i := range days {
+						if days[i].Date == t.Date {
+							days[i].Events = append(days[i].Events, upcomingEvent{
+								Activity:  activity.Name,
+								Location:  location.Name,
+								Time:      t.TimeRange,
+								Cancelled: cancelled,
+								Exception: exception,
+							})
+							break
+						}
+					}
+				})
+			}
+		}
+	}
+	for _, day := range days {
+		slices.SortStableFunc(day.Events, func(a, b upcomingEvent) int {
+			return a.Time.Compare(b.Time)
+		})
+	}
+	return days
+}
+
+// shortDate formats a date as an abbreviated month and day (e.g. "Jan 5").
+func shortDate(d fusiongo.Date) string {
+	return d.Month.String()[:3] + " " + strconv.Itoa(d.Day)
+}
+
+// locationWeekdayInstances returns the largest number of instances on any
+// single weekday for the location, i.e. the number of table rows.
+func locationWeekdayInstances(l Location) int {
+	var n [7]int
+	for _, x := range l.Instances {
+		for d, b := range x.Days {
+			if b {
+				n[d]++
+			}
+		}
+	}
+	var m int
+	for _, x := range n {
+		if x > m {
+			m = x
+		}
+	}
+	return m
+}
+
+// locationWeekdayInstance returns the i-th instance of the location on the
+// given weekday, or nil.
+func locationWeekdayInstance(l Location, w time.Weekday, i int) *Instance {
+	var c int
+	for xi, x := range l.Instances {
+		if x.Days[w] {
+			if c == i {
+				// quick sanity check to prevent bugs from being silently swallowed
+				for _, e := range x.Exceptions {
+					if !x.Days[e.Date.Weekday()] {
+						panic("wtf: instance has exceptions on weekdays the instance isn't on")
+					}
+				}
+				return &l.Instances[xi]
+			}
+			c++
+		}
+	}
+	return nil
+}
+
 // last returns a pointer to the last element of xs. Note that the pointer may
 // become stale if the slice is appended to.
 func last[T any](xs []T) *T {
@@ -1030,36 +849,6 @@ func mostCommonBy[T comparable, V any](vs []V, fn func(V) T) (value T) {
 		xs = append(xs, fn(v))
 	}
 	return mostCommon(xs)
-}
-
-// unindent returns s, using CRLFs if crlf is true. If s begins on a new line
-// and ends with indentation, the indentation is removed. Indentation uses the
-// tab character.
-func unindent(crlf bool, s string) string {
-	if lf := "\n"; strings.Contains(s, lf) {
-		if !strings.HasPrefix(s, lf) {
-			if lf = "\r\n"; !strings.HasPrefix(s, lf) {
-				panic("unindent: starts with junk before newline and indent")
-			}
-		}
-		if tmp := strings.TrimRight(s, "\t"); !strings.HasSuffix(tmp, lf) {
-			panic("unindent: incorrect trailing indentation")
-		} else if ident := lf + "\t" + s[len(tmp):]; !strings.HasPrefix(s, ident) {
-			panic("unindent: incorrect leading indentation")
-		} else {
-			s = strings.ReplaceAll(strings.TrimPrefix(tmp, ident), ident, lf)
-		}
-		var lfe string
-		if crlf {
-			lfe = "\r\n"
-		} else {
-			lfe = "\n"
-		}
-		if lf != lfe {
-			s = strings.ReplaceAll(s, lf, lfe)
-		}
-	}
-	return s
 }
 
 func mustOnce[T any](what string, fn func() (T, error)) func() T {

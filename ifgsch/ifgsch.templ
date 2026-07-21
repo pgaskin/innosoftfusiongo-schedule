@@ -1,0 +1,157 @@
+package ifgsch
+
+import (
+	"cmp"
+	"encoding/base64"
+	"strconv"
+	"time"
+)
+
+templ page(o *Options, s *Schedule) {
+	{{ title := cmp.Or(o.Title, "Schedule") }}
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=760,user-scalable=yes"/>
+			<meta name="generator" content="ifgsch"/>
+			<meta name="color-scheme" content="light dark"/>
+			if o.Description != "" {
+				<meta name="description" content={ o.Description }/>
+			}
+			<title>{ title }</title>
+			if len(o.Icon) > 0 {
+				<link href={ templ.SafeURL("data:image/x-icon;base64," + base64.StdEncoding.EncodeToString(o.Icon)) } rel="shortcut icon" type="image/x-icon"/>
+			}
+			if o.Canonical != "" {
+				<link rel="canonical" href={ templ.URL(o.Canonical) }/>
+			}
+			@templ.Raw("<style>\n" + md3CSS(o.Color) + "\n" + fontCSS() + styleCSS() + "\n</style>")
+		</head>
+		<body>
+			<main class="wrapper">
+				<div class="shrink">
+					<h1 class="title">{ title }</h1>
+					@scheduleSection(s)
+					@notificationsSection(s)
+					if o.UpcomingDays > 0 {
+						@upcomingSection(s, o.UpcomingDays)
+					}
+					@footer(o, s)
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+templ scheduleSection(s *Schedule) {
+	<section class="schedule">
+		<table>
+			<thead>
+				<tr class="week">
+					<th scope="row" class="range"><time datetime={ s.Start.String() }>{ shortDate(s.Start) }</time> - <time datetime={ s.End.String() }>{ shortDate(s.End) }</time></th>
+					for w := 0; w < 7; w++ {
+						<th scope="col" class="weekday">{ time.Weekday(w).String() }</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				for _, a := range s.Activities {
+					<tr class="activity">
+						<th scope="colgroup" class="activity" colspan="8">{ a.Name }</th>
+					</tr>
+					for _, c := range a.Locations {
+						{{ rows := locationWeekdayInstances(c) }}
+						for i := 0; i < rows; i++ {
+							<tr class="location">
+								if i == 0 {
+									<th scope="rowgroup" class="location" rowspan={ strconv.Itoa(rows) }>{ c.Name }</th>
+								}
+								for w := 0; w < 7; w++ {
+									{{ x := locationWeekdayInstance(c, time.Weekday(w), i) }}
+									if x != nil {
+										<td class="instance">
+											<div class="time"><time datetime={ x.Time.Start.String() }>{ x.Time.Start.StringCompact() }</time> - <time datetime={ x.Time.End.String() }>{ x.Time.End.StringCompact() }</time></div>
+											for _, e := range x.Exceptions {
+												if e.Date.Weekday() == time.Weekday(w) {
+													<div class="exception">
+														<time datetime={ e.Date.String() }>{ shortDate(e.Date) }</time>
+														switch  {
+															case e.OnlyOnWeekday:
+																{ "only" }
+															case e.LastOnWeekday:
+																{ "last" }
+															case e.Cancelled:
+																{ "cancelled" }
+															case e.Excluded:
+																{ "excluded" }
+															default:
+																<time datetime={ e.Time.Start.String() }>{ e.Time.Start.StringCompact() }</time>-<time datetime={ e.Time.End.String() }>{ e.Time.End.StringCompact() }</time>
+														}
+													</div>
+												}
+											}
+										</td>
+									} else {
+										<td class="instance empty"></td>
+									}
+								}
+							</tr>
+						}
+					}
+				}
+			</tbody>
+		</table>
+	</section>
+}
+
+templ notificationsSection(s *Schedule) {
+	for _, n := range s.Notifications {
+		<section class="notification">
+			<p class="text nogrow">{ n.Text }</p>
+			<div class="date nogrow"><time datetime={ n.Sent.Date.String() + "T" + n.Sent.Time.String() }>{ n.Sent.Date.String() + " " + n.Sent.Time.String() }</time></div>
+		</section>
+	}
+}
+
+templ upcomingSection(s *Schedule, n int) {
+	<section class="upcoming">
+		<div class="inner nogrow">
+			for _, d := range upcoming(s, n) {
+				<section class="day">
+					<h2 class="date">
+						<time datetime={ d.Date.String() }>
+							<span class="weekday">{ d.Date.Weekday().String()[:3] }</span>
+							<span class="date">{ shortDate(d.Date) }</span>
+						</time>
+					</h2>
+					<div class="events">
+						for _, e := range d.Events {
+							<div class={ "event", templ.KV("cancelled", e.Cancelled) } itemscope itemtype="https://schema.org/Event">
+								<div class="activity" itemprop="name">{ e.Activity }</div>
+								<div class="location" itemprop="location">{ e.Location }</div>
+								<div class="time"><time itemprop="startDate" datetime={ d.Date.String() + "T" + e.Time.Start.String() }>{ e.Time.Start.StringCompact() }</time> - <time itemprop="endDate" datetime={ d.Date.String() + "T" + e.Time.End.String() }>{ e.Time.End.StringCompact() }</time></div>
+								if e.Cancelled {
+									<meta itemprop="eventStatus" content="https://schema.org/EventCancelled"/>
+								}
+								<!-- TODO: show recurrence exception icon? -->
+							</div>
+						}
+					</div>
+				</section>
+			}
+		</div>
+	</section>
+}
+
+templ footer(o *Options, s *Schedule) {
+	<footer class="info">
+		<p class="nogrow">Updated <time datetime={ s.Updated.UTC().Format("2006-01-02T15:04:05Z") }>{ s.Updated.Local().Format("2006-01-02 15:04:05 MST") }</time>.</p>
+		<p class="nogrow">Modified <time datetime={ s.Modified.UTC().Format("2006-01-02T15:04:05Z") }>{ s.Modified.Local().Format("2006-01-02 15:04:05 MST") }</time>.</p>
+		for _, f := range o.Footer {
+			<p class="nogrow">
+				@templ.Raw(string(f))
+			</p>
+		}
+	</footer>
+}

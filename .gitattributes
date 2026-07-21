@@ -1,2 +1,3 @@
 ifgsch/*.ttf linguist-vendored
+ifgsch/*_templ.go linguist-generated
 m3color/mcu.js linguist-vendored linguist-generated
