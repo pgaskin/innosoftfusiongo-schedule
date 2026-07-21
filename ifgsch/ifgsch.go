@@ -260,6 +260,18 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 			Weekday  time.Weekday
 		}
 
+		// baseTimeRange is the most common start/end time for an activity
+		baseTimeRange := func(fais []int) fusiongo.TimeRange {
+			return fusiongo.TimeRange{
+				Start: mostCommonBy(fais, func(fai int) fusiongo.Time {
+					return schedule.Activities[fai].Time.TimeRange.Start
+				}),
+				End: mostCommonBy(fais, func(fai int) fusiongo.Time {
+					return schedule.Activities[fai].Time.TimeRange.End
+				}),
+			}
+		}
+
 		// partition activities by activity/location/weekday
 		pgs := map[PartitionKey]map[fusiongo.TimeRange][]int{}
 		for fai, fa := range schedule.Activities {
@@ -364,24 +376,10 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						c.Result.Activities = make([]int, 0, len(gs[c.Into])+len(gs[c.From]))
 						c.Result.Activities = append(c.Result.Activities, gs[c.Into]...)
 						c.Result.Activities = append(c.Result.Activities, gs[c.From]...)
-						c.Result.TimeRange = fusiongo.TimeRange{
-							Start: mostCommonBy(c.Result.Activities, func(fai int) fusiongo.Time {
-								return schedule.Activities[fai].Time.TimeRange.Start
-							}),
-							End: mostCommonBy(c.Result.Activities, func(fai int) fusiongo.Time {
-								return schedule.Activities[fai].Time.TimeRange.End
-							}),
-						}
+						c.Result.TimeRange = baseTimeRange(c.Result.Activities)
 
 						// compute penalty for duration
-						fromTimeRange := fusiongo.TimeRange{
-							Start: mostCommonBy(gs[c.From], func(fai int) fusiongo.Time {
-								return schedule.Activities[fai].Time.TimeRange.Start
-							}),
-							End: mostCommonBy(gs[c.From], func(fai int) fusiongo.Time {
-								return schedule.Activities[fai].Time.TimeRange.End
-							}),
-						}
+						fromTimeRange := baseTimeRange(gs[c.From])
 						if fromTimeRange.End.Less(fromTimeRange.Start) {
 							a, b := fromTimeRange.End, fromTimeRange.Start
 							c.Penalty.Duration += time.Duration(b.Hour-a.Hour) * time.Hour
@@ -466,14 +464,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 		for _, pk := range pks {
 			for _, gk := range pgks[pk] {
 				ga := pgs[pk][gk]
-				timeRange := fusiongo.TimeRange{
-					Start: mostCommonBy(ga, func(fai int) fusiongo.Time {
-						return schedule.Activities[fai].Time.TimeRange.Start
-					}),
-					End: mostCommonBy(ga, func(fai int) fusiongo.Time {
-						return schedule.Activities[fai].Time.TimeRange.End
-					}),
-				}
+				timeRange := baseTimeRange(ga)
 				for _, fai := range ga {
 					if fa := schedule.Activities[fai]; fa.Time.TimeRange != timeRange {
 						slog.Debug("move into", "base", timeRange, slog.Group("activity", "time", fa.Time, "activity", fa.Activity, "location", fa.Location))
@@ -807,14 +798,7 @@ func last[T any](xs []T) *T {
 // mapFilterSortUniq maps a slice of T into a slice of unique and sorted U
 // values where fn returns true.
 func mapFilterSortUniq[T any, U cmp.Ordered](xs []T, fn func(int, T) (U, bool)) []U {
-	us := make([]U, 0, len(xs))
-	for i, x := range xs {
-		if u, ok := fn(i, x); ok {
-			us = append(us, u)
-		}
-	}
-	slices.Sort(us)
-	return slices.Clip(slices.Compact(us))
+	return mapFilterSortUniqFunc(xs, fn, cmp.Compare)
 }
 
 // mapFilterSortUniqFunc is like mapFilterSortUniq, but takes a custom
