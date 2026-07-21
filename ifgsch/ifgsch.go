@@ -416,7 +416,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 						}
 
 						// compute penalty for change in number of total exclusions
-						for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
+						for d := range dates(ss.Start, ss.End) {
 							if d.Weekday() == pk.Weekday {
 								if !slices.ContainsFunc(c.Result.Activities, func(fai int) bool {
 									return schedule.Activities[fai].Time.Date == d
@@ -512,7 +512,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 				}
 
 				var gkExclusions int
-				for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
+				for d := range dates(ss.Start, ss.End) {
 					if d.Weekday() == pk.Weekday {
 						if !slices.ContainsFunc(pgs[pk][gk], func(fai int) bool {
 							return schedule.Activities[fai].Time.Date == d
@@ -576,7 +576,7 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 					}
 				}
 
-				for d := ss.Start; !ss.End.Less(d); d = d.AddDays(1) {
+				for d := range dates(ss.Start, ss.End) {
 					if ssInstance.Days[d.Weekday()] {
 						var exists bool
 						for fai, fa := range schedule.Activities {
@@ -662,7 +662,7 @@ type Occurrence struct {
 func Expand(s *Schedule, i Instance) iter.Seq[Occurrence] {
 	return func(yield func(Occurrence) bool) {
 	date:
-		for date := s.Start; !s.End.Less(date); date = date.AddDays(1) {
+		for date := range dates(s.Start, s.End) {
 			if i.Days[date.Weekday()] {
 				t := fusiongo.DateTimeRange{
 					Date:      date,
@@ -792,6 +792,17 @@ func locationWeekdayInstance(l Location, w time.Weekday, i int) *Instance {
 		}
 	}
 	return nil
+}
+
+// dates yields every date in [start, end].
+func dates(start, end fusiongo.Date) iter.Seq[fusiongo.Date] {
+	return func(yield func(fusiongo.Date) bool) {
+		for d := start; !end.Less(d); d = d.AddDays(1) {
+			if !yield(d) {
+				return
+			}
+		}
+	}
 }
 
 // last returns a pointer to the last element of xs. Note that the pointer may
