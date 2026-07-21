@@ -7,8 +7,10 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/pgaskin/go-gfsubsets"
 	"github.com/pgaskin/go-hbsubset"
 	"github.com/pgaskin/go-woff2"
+	"golang.org/x/text/unicode/rangetable"
 )
 
 //go:generate go run fetch.go https://github.com/Omnibus-Type/Asap/raw/ca471c0ccf90a5c66155d4bcaa020859804ffd00/fonts/variable/Asap%5Bwdth%2Cwght%5D.ttf asap.ttf
@@ -38,14 +40,18 @@ var keepNames = []hbsubset.NameID{
 
 var asapWOFF2 = mustOnce("subset asap", func() ([]byte, error) {
 	sub, err := hbsubset.Subset(asapTTF, 0, &hbsubset.Options{
-		UnicodeRanges: &unicode.RangeTable{
-			R16: []unicode.Range16{
-				{Stride: 1, Lo: 32, Hi: 126},            // space + ascii printable
-				{Stride: 1, Lo: '\u2002', Hi: '\u201e'}, // spaces, smart punctuation
-				{Stride: 1, Lo: '\u2022', Hi: '\u2022'}, // bullet
-				{Stride: 1, Lo: '\u2026', Hi: '\u2026'}, // ellipsis
-			},
+		Unicodes: []rune{
+			'\u2022', // bullet
+			'\u2026', // ellipsis
 		},
+		UnicodeRanges: rangetable.Merge(
+			gfsubsets.Latin,
+			&unicode.RangeTable{
+				R16: []unicode.Range16{
+					{Stride: 1, Lo: '\u2002', Hi: '\u201e'}, // spaces, smart punctuation
+				},
+			},
+		),
 		PinAllAxesToDefault: true,
 		AxisRanges: map[hbsubset.Tag]hbsubset.AxisRange{
 			hbsubset.MakeTag("wght"): {Min: 100, Max: 900, Default: 400},

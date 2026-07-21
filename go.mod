@@ -5,11 +5,13 @@ go 1.27rc2
 require (
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
 	github.com/evanw/esbuild v0.19.5
+	github.com/pgaskin/go-gfsubsets v0.0.1
 	github.com/pgaskin/go-hbsubset v0.0.0-20260711183714-7d8dc5e2cb8d
 	github.com/pgaskin/go-lightningcss v0.0.0-20260614010002-b10cc786152c
 	github.com/pgaskin/go-woff2 v0.0.2
 	github.com/pgaskin/innosoftfusiongo-ical v0.1.0
 	github.com/pmezard/go-difflib v1.0.0
+	golang.org/x/text v0.38.0
 )
 
 require (
@@ -20,5 +22,4 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
 	golang.org/x/sys v0.1.0 // indirect
-	golang.org/x/text v0.3.8 // indirect
 )
