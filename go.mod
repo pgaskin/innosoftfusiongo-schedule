@@ -1,6 +1,6 @@
 module github.com/pgaskin/innosoftfusiongo-schedule
 
-go 1.21.1
+go 1.27rc2
 
 require (
 	github.com/dop251/goja v0.0.0-20231014103939-873a1496dc8e
