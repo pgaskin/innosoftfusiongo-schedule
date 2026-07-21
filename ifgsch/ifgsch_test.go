@@ -334,15 +334,15 @@ func Test(t *testing.T) {
 				for _, activity := range s.Activities {
 					for _, location := range activity.Locations {
 						for _, instance := range location.Instances {
-							Expand(s, instance, func(dt fusiongo.DateTimeRange, cancelled, exception bool) {
-								if dt.Date.Year == 2024 && dt.Date.Month == time.January && dt.Date.Day == 29 {
+							for ev := range Expand(s, instance) {
+								if ev.Time.Date.Year == 2024 && ev.Time.Date.Month == time.January && ev.Time.Date.Day == 29 {
 									n++
-									if cancelled {
+									if ev.Cancelled {
 										nc++
 									}
-									t.Logf("activity=%q location=%q time=%q cancelled=%t exception=%t", activity.Name, location.Name, dt.StringCompact(), cancelled, exception)
+									t.Logf("activity=%q location=%q time=%q cancelled=%t exception=%t", activity.Name, location.Name, ev.Time.StringCompact(), ev.Cancelled, ev.Exception)
 								}
-							})
+							}
 						}
 					}
 				}
@@ -622,14 +622,14 @@ func dumpListSchedule(s *Schedule) string {
 	for _, a := range s.Activities {
 		for _, l := range a.Locations {
 			for _, i := range l.Instances {
-				Expand(s, i, func(t fusiongo.DateTimeRange, cancelled, _ bool) {
+				for ev := range Expand(s, i) {
 					dl = append(dl, dumpListItem{
-						Time:      t,
+						Time:      ev.Time,
 						Activity:  a.Name,
 						Location:  l.Name,
-						Cancelled: cancelled,
+						Cancelled: ev.Cancelled,
 					})
-				})
+				}
 			}
 		}
 	}

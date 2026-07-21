@@ -82,16 +82,16 @@ func dumpEvents(b *bytes.Buffer, s *Schedule) {
 						wd = append(wd, time.Weekday(d).String()[:2])
 					}
 				}
-				Expand(s, i, func(t fusiongo.DateTimeRange, _, exception bool) {
+				for ev := range Expand(s, i) {
 					e := Event{
 						Activity: a.Name,
 						Location: l.Name,
-						Time:     t,
+						Time:     ev.Time,
 						Schedule: fmt.Sprintf("%s %s", i.Time, wd),
 					}
-					if exception {
+					if ev.Exception {
 						for _, x := range i.Exceptions {
-							if x.Date == t.Date {
+							if x.Date == ev.Time.Date {
 								e.Schedule = fmt.Sprintf("%-40s ", e.Schedule)
 								switch {
 								case x.OnlyOnWeekday:
@@ -111,7 +111,7 @@ func dumpEvents(b *bytes.Buffer, s *Schedule) {
 						}
 					}
 					events = append(events, e)
-				})
+				}
 			}
 		}
 	}

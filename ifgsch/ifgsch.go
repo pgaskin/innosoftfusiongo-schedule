@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"iter"
 	"log/slog"
 	"slices"
 	"strconv"
@@ -650,42 +651,53 @@ func prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 	return &ss, schedule, nil
 }
 
-// Expand calls fn for all events in i.
-func Expand(s *Schedule, i Instance, fn func(t fusiongo.DateTimeRange, cancelled, exception bool)) {
-date:
-	for date := s.Start; !s.End.Less(date); date = date.AddDays(1) {
-		if i.Days[date.Weekday()] {
-			t := fusiongo.DateTimeRange{
-				Date:      date,
-				TimeRange: i.Time,
-			}
-			var cancelled, exception bool
-			for _, x := range i.Exceptions {
-				if x.Date == date {
-					switch {
-					case x.OnlyOnWeekday:
-						// do nothing
-					case x.LastOnWeekday:
-						// do nothing
-					case x.Excluded:
-						if x.Date == date {
-							continue date
+// Occurrence is a single expanded occurrence of an [Instance] on a date.
+type Occurrence struct {
+	Time      fusiongo.DateTimeRange
+	Cancelled bool
+	Exception bool
+}
+
+// Expand yields all occurrences of i in s.
+func Expand(s *Schedule, i Instance) iter.Seq[Occurrence] {
+	return func(yield func(Occurrence) bool) {
+	date:
+		for date := s.Start; !s.End.Less(date); date = date.AddDays(1) {
+			if i.Days[date.Weekday()] {
+				t := fusiongo.DateTimeRange{
+					Date:      date,
+					TimeRange: i.Time,
+				}
+				var cancelled, exception bool
+				for _, x := range i.Exceptions {
+					if x.Date == date {
+						switch {
+						case x.OnlyOnWeekday:
+							// do nothing
+						case x.LastOnWeekday:
+							// do nothing
+						case x.Excluded:
+							if x.Date == date {
+								continue date
+							}
+						case x.Cancelled:
+							cancelled = true
+						case x.Time != (fusiongo.TimeRange{}):
+							t.TimeRange = x.Time
+						default:
+							panic("wtf")
 						}
-					case x.Cancelled:
-						cancelled = true
-					case x.Time != (fusiongo.TimeRange{}):
-						t.TimeRange = x.Time
-					default:
-						panic("wtf")
+						exception = true
+					} else if x.OnlyOnWeekday && date.Weekday() == x.Date.Weekday() {
+						continue date
+					} else if x.LastOnWeekday && date.Weekday() == x.Date.Weekday() && x.Date.Less(date) {
+						continue date
 					}
-					exception = true
-				} else if x.OnlyOnWeekday && date.Weekday() == x.Date.Weekday() {
-					continue date
-				} else if x.LastOnWeekday && date.Weekday() == x.Date.Weekday() && x.Date.Less(date) {
-					continue date
+				}
+				if !yield(Occurrence{t, cancelled, exception}) {
+					return
 				}
 			}
-			fn(t, cancelled, exception)
 		}
 	}
 }
@@ -711,20 +723,20 @@ func upcoming(s *Schedule, n int) []upcomingDay {
 	for _, activity := range s.Activities {
 		for _, location := range activity.Locations {
 			for _, instance := range location.Instances {
-				Expand(s, instance, func(t fusiongo.DateTimeRange, cancelled, exception bool) {
+				for ev := range Expand(s, instance) {
 					for i := range days {
-						if days[i].Date == t.Date {
+						if days[i].Date == ev.Time.Date {
 							days[i].Events = append(days[i].Events, upcomingEvent{
 								Activity:  activity.Name,
 								Location:  location.Name,
-								Time:      t.TimeRange,
-								Cancelled: cancelled,
-								Exception: exception,
+								Time:      ev.Time.TimeRange,
+								Cancelled: ev.Cancelled,
+								Exception: ev.Exception,
 							})
 							break
 						}
 					}
-				})
+				}
 			}
 		}
 	}
