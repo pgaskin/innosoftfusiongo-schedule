@@ -132,7 +132,7 @@ func Prepare(schedule *fusiongo.Schedule, notifications *fusiongo.Notifications,
 	return s, err
 }
 
-var cancelledRe = regexp.MustCompile(`(?i)^CANCELL?ED - | - CANCELL?ED$| \[CANCELL?ED\]$| \(CANCELL?ED\)$`)
+var cancelledRe = regexp.MustCompile(`(?i)^CANCELL?ED - ?| ?- CANCELL?ED$| \[CANCELL?ED\]$| ?\(CANCELL?ED\)$`)
 
 // cutActivityCancelled removes a leading or trailing textual cancellation from
 // an activity name, if present.
