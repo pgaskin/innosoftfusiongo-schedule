@@ -32,9 +32,12 @@ templ page(o *Options, s *Schedule) {
 			<main class="wrapper">
 				<div class="shrink">
 					<h1 class="title">{ title }</h1>
+					if o.UpcomingDays > 0 && o.UpcomingTop {
+						@upcomingSection(s, o.UpcomingDays)
+					}
 					@scheduleSection(s)
 					@notificationsSection(s)
-					if o.UpcomingDays > 0 {
+					if o.UpcomingDays > 0 && !o.UpcomingTop {
 						@upcomingSection(s, o.UpcomingDays)
 					}
 					@footer(o, s)

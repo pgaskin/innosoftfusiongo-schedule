@@ -70,6 +70,7 @@ type Options struct {
 	Description  string
 	Footer       []template.HTML
 	UpcomingDays int
+	UpcomingTop  bool
 	Canonical    string
 }
 

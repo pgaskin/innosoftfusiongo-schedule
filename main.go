@@ -338,13 +338,18 @@ func parseSchedules(r io.Reader) (schedules, error) {
 			}
 			cfg[cur].Options.Footer = append(cfg[cur].Options.Footer, template.HTML(value))
 		case "upcoming":
-			n, err := strconv.ParseInt(value, 10, 64)
+			arg := strings.Fields(value)
+			if len(arg) < 1 || len(arg) > 2 || (len(arg) == 2 && arg[1] != "top") {
+				return nil, fmt.Errorf("line %d: expected %q, got %q", line, "upcoming <days> [top]", value)
+			}
+			n, err := strconv.ParseInt(arg[0], 10, 64)
 			if err != nil {
-				return nil, fmt.Errorf("line %d: invalid number %q: %w", line, value, err)
+				return nil, fmt.Errorf("line %d: invalid number %q: %w", line, arg[0], err)
 			}
 			if n < 1 || n > 90 {
 				return nil, fmt.Errorf("line %d: upcoming days must be greater than zero if specified, and lower than 90, got %d", line, n)
 			}
+			cfg[cur].Options.UpcomingTop = len(arg) == 2
 			cfg[cur].Options.UpcomingDays = int(n)
 		case "unlisted":
 			if value != "" {
